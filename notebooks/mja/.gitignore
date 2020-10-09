@@ -1,4 +1,5 @@
 hackathon_data_prep.ipynb
+*.xlsx
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
