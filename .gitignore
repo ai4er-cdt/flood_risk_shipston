@@ -92,6 +92,6 @@ io/
 .history
 
 # Ignore data folder
-Code
-Code/
-.Code/
+data
+data/
+./data/
