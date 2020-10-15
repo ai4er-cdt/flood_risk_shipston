@@ -10,4 +10,5 @@ dependencies:
   - jupyter
   - flake8
   - black
+  - matplotlib
   
