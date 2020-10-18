@@ -1,6 +1,14 @@
+name: shipston-extreme
 prefix: ./env
 channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.8 
+  - python=3.8
+  - pandas
+  - matplotlib
+  - scipy
+  - pip
+  - pip:
+     - git+https://github.com/OpenHydrology/lmoments3.git
+     - git+https://github.com/sdat2/scikit-extremes.git
