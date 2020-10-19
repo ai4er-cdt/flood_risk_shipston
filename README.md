@@ -9,4 +9,4 @@ Project template created by the [Cambridge AI4ER Cookiecutter](https://github.co
 > conda env create -f environment.yml
 
 
-> conda activate shipston-extreme
+> conda activate shipston-ext

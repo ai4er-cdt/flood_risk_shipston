@@ -1,5 +1,5 @@
-name: shipston-extreme
-prefix: ./env
+name: shipston-ext
+# prefix: ./env
 channels:
   - conda-forge
   - defaults
@@ -8,7 +8,9 @@ dependencies:
   - pandas
   - matplotlib
   - scipy
+  - jupyter
   - pip
   - pip:
+     - xlrd
      - git+https://github.com/OpenHydrology/lmoments3.git
      - git+https://github.com/sdat2/scikit-extremes.git
