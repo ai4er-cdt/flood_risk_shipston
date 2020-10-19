@@ -12,5 +12,6 @@ dependencies:
   - pip
   - pip:
      - xlrd
+     - openpyxl
      - git+https://github.com/OpenHydrology/lmoments3.git
      - git+https://github.com/sdat2/scikit-extremes.git
