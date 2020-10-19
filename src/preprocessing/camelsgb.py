@@ -1,13 +1,12 @@
 import os
 from typing import Dict, List, Optional, Tuple
 
+import dask.dataframe as dd
 import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
-# TODO: iterate through all basin files and find out if any flow data has nans in the middle of it rather than just
-# at the start (or perhaps the end?)
 # TODO: combine two basins into one and figure out how to split train/test, probably add split % argument.
 
 
@@ -75,25 +74,57 @@ class CamelsGB(Dataset):
         return self.stds
 
     def _load_data(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        # Load input and output data from the forcing and discharge datasets
-        directory = os.path.join(os.getcwd(), r'src\data\CAMELS-GB\timeseries')
-        filename = 'CAMELS_GB_hydromet_timeseries_1001_19701001-20150930.csv'
-        df: pd.DataFrame = pd.read_csv(os.path.join(directory, filename))
-        data: pd.DataFrame = df[['precipitation', 'pet', 'temperature', 'peti', 'humidity', 'shortwave_rad',
-                                  'longwave_rad', 'windspeed', 'date']]
-        data.date = pd.to_datetime(data.date, dayfirst=True, format="%Y/%m/%d")
-        data['QObs(mm/d)'] = df['discharge_spec']
-        del df
-        # TODO: store fully processed file of all 671 basins combined that will be saved the first time this is run?
+        directory: str = os.path.join(os.getcwd(), r'src\data\CAMELS-GB')
+        if self.basin_ids is None:
+            # If no basin_ids are passed, we find the list of all ids. TODO: Include this list as a constant?
+            climatic_attr: pd.DataFrame = pd.read_csv(os.path.join(directory, "CAMELS_GB_climatic_attributes.csv"),
+                                                      usecols=['gauge_id'])
+            self.basin_ids = sorted(climatic_attr['gauge_id'].tolist())
+            del climatic_attr  # Remove this line when we decide what basin attribute features to use.
 
+        # TODO: Add column with basin_id
+        first_basin: str = self.basin_ids[0]
+        filename: str = f'CAMELS_GB_hydromet_timeseries_{first_basin}_19701001-20150930.csv'
+        data: pd.DataFrame = pd.read_csv(os.path.join(directory, 'timeseries', filename),
+                                            usecols=['date',
+                                                    'precipitation',
+                                                    'temperature',
+                                                    'shortwave_rad',
+                                                    'peti',
+                                                    'humidity',
+                                                    'discharge_spec'])
+        data.rename(columns={"discharge_spec": "QObs(mm/d)"}, inplace=True)
+        data.date = pd.to_datetime(data.date, dayfirst=True, format="%Y/%m/%d")
+        if len(self.basin_ids) > 1:
+            for basin_idx in range(1, len(self.basin_ids)):
+                filename = f'CAMELS_GB_hydromet_timeseries_{basin_idx}_19701001-20150930.csv'
+                new_data: pd.DataFrame = pd.read_csv(os.path.join(directory, 'timeseries', filename),
+                                        usecols=['date',
+                                                'precipitation',
+                                                'temperature',
+                                                'shortwave_rad',
+                                                'peti',
+                                                'humidity',
+                                                'discharge_spec'])
+                new_data.rename(columns={"discharge_spec": "QObs(mm/d)"}, inplace=True)
+                new_data.date = pd.to_datetime(data.date, dayfirst=True, format="%Y/%m/%d")
+                data = pd.concat([data, new_data], axis=0, ignore_index=True)
+                del new_data
+
+        # TODO: store fully processed file of all 671 basins combined that will be saved the first time this is run?
+        # TODO: fix date processing.
         if self.dates is not None:
             # If meteorological observations exist before start date
             # use these as well. Similiar to hydrological warmup mode.
-            if self.dates[0] - pd.DateOffset(days=self.seq_length) > data.index[0]:
+            if self.dates[0] - pd.DateOffset(days=self.seq_length) > data.date[0]:
                 start_date: pd.Timestamp = self.dates[0] - pd.DateOffset(days=self.seq_length)
             else:
                 start_date = self.dates[0]
-            data = data[start_date:self.dates[1]]
+            start_index = data.loc[data['date'] == start_date].index[0]
+            end_index = data.loc[data['date'] == self.dates[1]].index[0]
+            data = data[start_index:end_index]
+
+        data = self._remove_nan_regions(data)
 
         # if training mode store means and stds
         if self.mode == 'train':
@@ -105,31 +136,17 @@ class CamelsGB(Dataset):
         y: np.ndarray = data['QObs(mm/d)'].to_numpy()
 
         # normalise data, reshape for LSTM training and remove invalid samples
-        # normalisation is done because it speeds up training and allows the model to give appropriate weight to each
-        # feature
+        # normalisation is done because it speeds up training (better gradient flow) and allows the model to give
+        # appropriate weight to each feature
         x = self._local_normalization(x, variable='inputs')
         x, y = self._reshape_data(x, y)
 
         if self.mode == "train":
-            # data tidying!
-            # Delete all samples where discharge is NaN
-            if np.sum(np.isnan(y)) > 0:
-                print("Deleted some records because of NaNs")
-                x = np.delete(x, np.argwhere(np.isnan(y)), axis=0)
-                y = np.delete(y, np.argwhere(np.isnan(y)), axis=0)
-
-            # Deletes all records where no discharge was measured (-999)
-            x = np.delete(x, np.argwhere(y < 0)[:, 0], axis=0)
-            y = np.delete(y, np.argwhere(y < 0)[:, 0], axis=0)
-
-            # normalise discharge - same reasons as given above for the inputs
+            # Normalise discharge - only needs to be done when training.
             y = self._local_normalization(y, variable='output')
 
         # convert arrays to torch tensors
         return torch.from_numpy(x.astype(np.float32)), torch.from_numpy(y.astype(np.float32))
-
-    def _fetch_basins(self, basin_ids: List[str]) -> pd.DataFrame:
-        raise NotImplementedError
 
     def _local_normalization(self, feature: np.ndarray, variable: str) -> np.ndarray:
         """
@@ -226,3 +243,35 @@ class CamelsGB(Dataset):
             y_new[i, :] = y[i + self.seq_length - 1]
 
         return x_new, y_new
+
+    def _remove_nan_regions(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Remove some regions of `df` where the discharge data contains NaNs.
+
+        Because we don't want to remove the previous `seq_length` days of
+        forcing data for the first discharge value after a sequence of NaNs, we
+        can't remove all rows with NaNs. Therefore we only remove the rows with
+        NaNs which have more than `seq_length` consecutive NaNs in front.
+
+        Args:
+            df (pd.DataFrame): Input dataframe.
+
+        Returns:
+            pd.DataFrame: The input dataframe with some rows of NaNs removed.
+        """
+        nan_regions = []
+        in_nanregion = False
+        # Calculate the start and end indices of all sections of nans in the discharge data.
+        for row in range(len(df)):
+            if pd.isna(df['discharge_spec'][row]) and not in_nanregion:
+                nan_regions.append(row)
+                in_nanregion = True
+            if not pd.isna(df['discharge_spec'][row]) and in_nanregion:
+                nan_regions.append(row - 1)
+                in_nanregion = False
+        # Remove the rows with nans.
+        for idx in range(len(nan_regions)):
+            if idx % 2 != 0:
+                nan_regions[idx] -= self.seq_length
+                df.drop(df.index[nan_regions[idx - 1]:nan_regions[idx] + 1], inplace=True)
+        return df

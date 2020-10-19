@@ -17,14 +17,21 @@ from preprocessing.camelsgb import CamelsGB
 
 def train_epoch(model: torch.nn.Module, optimizer: torch.optim.Optimizer, loader: torch.utils.data.DataLoader,
                 loss_func: torch.nn.Module, epoch: int) -> None:
-    """Train model for a single epoch.
+    """
+    Train model for a single epoch.
 
-    :param model: A torch.nn.Module implementing the LSTM model
-    :param optimizer: One of PyTorchs optimizer classes.
-    :param loader: A PyTorch DataLoader, providing the trainings
-        data in mini batches.
-    :param loss_func: The loss function to minimize.
-    :param epoch: The current epoch (int) used for the progress bar
+    Note that we use `non_blocking=True` when transferring data to the device.
+    This only does anything when using a GPU and when `pin_memory=True` is used
+    in the DataLoader, in which case the data is transferred asynchronously to
+    the GPU from pinned memory on the CPU, increasing GPU utilisation.
+
+    Args:
+        model (torch.nn.Module): A torch.nn.Module implementing the LSTM model.
+        optimizer (torch.optim.Optimizer): A PyTorch optimizer class.
+        loader (torch.utils.data.DataLoader): A PyTorch DataLoader with the
+        training data.
+        loss_func (torch.nn.Module): The loss function to minimize.
+        epoch (int): The current epoch, used for the progress bar.
     """
     # set model to train mode (important for dropout)
     model.train()
@@ -49,13 +56,18 @@ def train_epoch(model: torch.nn.Module, optimizer: torch.optim.Optimizer, loader
 
 
 def eval_model(model: torch.nn.Module, loader: torch.utils.data.DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Evaluate the model.
+    """
+    Evaluate the model.
 
-    :param model: A torch.nn.Module implementing the LSTM model
-    :param loader: A PyTorch DataLoader, providing the data.
+    Args:
+        model (torch.nn.Module): A torch.nn.Module implementing the LSTM model.
+        loader (torch.utils.data.DataLoader): A PyTorch DataLoader with the data
+        to evaluate.
 
-    :return: Two torch Tensors, containing the observations and
-        model predictions
+    Returns:
+        Tuple[torch.Tensor, torch.Tensor]: Two Tensors containing the
+        observations and predictions respectively for all minibatches in the
+        data loader.
     """
     # set model to eval mode (important for dropout)
     model.eval()
@@ -83,12 +95,17 @@ if __name__ == "__main__":
     # and as a way to extract uncertainty (MC dropout)
     learning_rate: float = 3e-3
     sequence_length: int = 365  # Length of the meteorological record provided to the network
+    batch_size = 256  # 512 is the value used in the paper
+
+    # TODO: Pass list of features as an argument with sensible default, have num_features calculated from this
+    # and passed to LSTM_Model for input.
 
     # Training data
     start_date: pd.Timestamp = pd.to_datetime("2000-12-09", format="%Y-%m-%d")
     end_date: pd.Timestamp = pd.to_datetime("2008-12-08", format="%Y-%m-%d")
     ds_train = CamelsGB(seq_length=sequence_length, mode="train", dates=[start_date, end_date])
-    tr_loader = DataLoader(ds_train, batch_size=256, shuffle=True, pin_memory=True)
+    # Use `pin_memory=True` here for asynchronous data transfer to the GPU.
+    tr_loader = DataLoader(ds_train, batch_size=batch_size, shuffle=True, pin_memory=True)
 
     # Validation data. We use the feature means/stds of the training period for normalization
     means: Dict[str, float] = ds_train.get_means()
