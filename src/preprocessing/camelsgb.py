@@ -1,13 +1,12 @@
 import os
 from typing import Dict, List, Optional, Tuple
 
-import dask.dataframe as dd
 import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
-# TODO: combine two basins into one and figure out how to split train/test, probably add split % argument.
+# TODO: figure out how to split train/test, probably add split % argument.
 
 
 class CamelsGB(Dataset):
@@ -40,11 +39,11 @@ class CamelsGB(Dataset):
             dates (List, optional):  List of `pd.DateTime` dates of the start
             and end of the discharge mode. Defaults to `None`.
             means: (Dict, optional) Means of input and output features derived
-            from the training period. Has to be provided for `mode='eval'`. Can
-            be retrieved by calling `get_means()` on the dataset.
+            from the training period. Has to be provided when `mode` is not
+            `'train'`. Can be retrieved by calling `get_means()` on the dataset.
             stds: (Dict, optional) Std of input and output features derived
-            from the training period. Has to be provided for `mode='eval'`. Can
-            be retrieved by calling `get_stds()` on the dataset.
+            from the training period. Has to be provided when `mode` is not
+            `'train'`. Can be retrieved by calling `get_stds()` on the dataset.
         """
         self.seq_length: int = seq_length
         self.basin_ids: Optional[List[str]] = basin_ids
@@ -74,7 +73,7 @@ class CamelsGB(Dataset):
         return self.stds
 
     def _load_data(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        directory: str = os.path.join(os.getcwd(), r'src\data\CAMELS-GB')
+        directory: str = os.path.join(os.getcwd(), 'src', 'data', 'CAMELS-GB')
         if self.basin_ids is None:
             # If no basin_ids are passed, we find the list of all ids. TODO: Include this list as a constant?
             climatic_attr: pd.DataFrame = pd.read_csv(os.path.join(directory, "CAMELS_GB_climatic_attributes.csv"),
@@ -82,50 +81,46 @@ class CamelsGB(Dataset):
             self.basin_ids = sorted(climatic_attr['gauge_id'].tolist())
             del climatic_attr  # Remove this line when we decide what basin attribute features to use.
 
-        # TODO: Add column with basin_id
         first_basin: str = self.basin_ids[0]
         filename: str = f'CAMELS_GB_hydromet_timeseries_{first_basin}_19701001-20150930.csv'
         data: pd.DataFrame = pd.read_csv(os.path.join(directory, 'timeseries', filename),
-                                            usecols=['date',
-                                                    'precipitation',
-                                                    'temperature',
-                                                    'shortwave_rad',
-                                                    'peti',
-                                                    'humidity',
-                                                    'discharge_spec'])
+                                         usecols=['date',
+                                                  'precipitation',
+                                                  'temperature',
+                                                  'shortwave_rad',
+                                                  'peti',
+                                                  'humidity',
+                                                  'discharge_spec'])
         data.rename(columns={"discharge_spec": "QObs(mm/d)"}, inplace=True)
         data.date = pd.to_datetime(data.date, dayfirst=True, format="%Y/%m/%d")
+        data['basin_id'] = first_basin
+        if self.dates is not None:
+            data = self._crop_dates(data, start_date=self.dates[0], end_date=self.dates[1])
+        data = self._remove_nan_regions(data)
+
         if len(self.basin_ids) > 1:
             for basin_idx in range(1, len(self.basin_ids)):
-                filename = f'CAMELS_GB_hydromet_timeseries_{basin_idx}_19701001-20150930.csv'
+                basin: str = self.basin_ids[basin_idx]
+                filename = f'CAMELS_GB_hydromet_timeseries_{basin}_19701001-20150930.csv'
                 new_data: pd.DataFrame = pd.read_csv(os.path.join(directory, 'timeseries', filename),
-                                        usecols=['date',
-                                                'precipitation',
-                                                'temperature',
-                                                'shortwave_rad',
-                                                'peti',
-                                                'humidity',
-                                                'discharge_spec'])
+                                                     usecols=['date',
+                                                              'precipitation',
+                                                              'temperature',
+                                                              'shortwave_rad',
+                                                              'peti',
+                                                              'humidity',
+                                                              'discharge_spec'])
                 new_data.rename(columns={"discharge_spec": "QObs(mm/d)"}, inplace=True)
                 new_data.date = pd.to_datetime(data.date, dayfirst=True, format="%Y/%m/%d")
+                new_data['basin_id'] = basin
+                if self.dates is not None:
+                    new_data = self._crop_dates(new_data, start_date=self.dates[0], end_date=self.dates[1])
+                new_data = self._remove_nan_regions(new_data)
+
                 data = pd.concat([data, new_data], axis=0, ignore_index=True)
                 del new_data
 
         # TODO: store fully processed file of all 671 basins combined that will be saved the first time this is run?
-        # TODO: fix date processing.
-        if self.dates is not None:
-            # If meteorological observations exist before start date
-            # use these as well. Similiar to hydrological warmup mode.
-            if self.dates[0] - pd.DateOffset(days=self.seq_length) > data.date[0]:
-                start_date: pd.Timestamp = self.dates[0] - pd.DateOffset(days=self.seq_length)
-            else:
-                start_date = self.dates[0]
-            start_index = data.loc[data['date'] == start_date].index[0]
-            end_index = data.loc[data['date'] == self.dates[1]].index[0]
-            data = data[start_index:end_index]
-
-        data = self._remove_nan_regions(data)
-
         # if training mode store means and stds
         if self.mode == 'train':
             self.means = data.mean().to_dict()
@@ -244,14 +239,39 @@ class CamelsGB(Dataset):
 
         return x_new, y_new
 
+    def _crop_dates(self, df: pd.DataFrame, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
+        """
+        Remove dates in df outside the range from `start_date` to `end_date`.
+
+        Assumes data in `df` is in chronological order. Also keeps a leeway of
+        `seq_length` days before `start_date` so that we can start training from
+        that date.
+
+        Args:
+            df (pd.DataFrame): Input data with dates in chronological order.
+            start_date (pd.Timestamp) Start date of discharge period.
+            end_date (pd.Timestamp) End date of discharge period.
+
+        Returns:
+            pd.DataFrame: The input dataframe with dates cropped to a range.
+        """
+        if start_date - pd.DateOffset(days=self.seq_length) > df.date[0]:
+            start_date -= pd.DateOffset(days=self.seq_length)
+
+        start_index = df.loc[df['date'] == start_date].index[0]
+        end_index = df.loc[df['date'] == end_date].index[0]
+        return df[start_index:end_index]
+
     def _remove_nan_regions(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Remove some regions of `df` where the discharge data contains NaNs.
 
-        Because we don't want to remove the previous `seq_length` days of
-        forcing data for the first discharge value after a sequence of NaNs, we
-        can't remove all rows with NaNs. Therefore we only remove the rows with
-        NaNs which have more than `seq_length` consecutive NaNs in front.
+        This function assumes the data comes from a single basin and is in
+        chronological order. Note that because we don't want to remove the
+        previous `seq_length` days of forcing data for the first discharge value
+        after a sequence of NaNs, we can't remove all rows with NaNs. Therefore
+        we only remove the rows with NaNs which have more than `seq_length`
+        consecutive NaNs in front.
 
         Args:
             df (pd.DataFrame): Input dataframe.
