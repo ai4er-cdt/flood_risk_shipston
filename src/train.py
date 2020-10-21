@@ -6,9 +6,9 @@ import torch.nn as nn
 import tqdm
 from torch.utils.data import DataLoader
 
-from models.lstm import LSTM_Model
-from models.metrics import calc_nse
-from preprocessing.camelsgb import CamelsGB
+from src.models.lstm import LSTM_Model
+from src.models.metrics import calc_nse
+from src.preprocessing.camelsgb import CamelsGB
 
 # TODO: implement optional wandb integration that doesn't activate unless wandb
 # is installed?
@@ -112,14 +112,14 @@ if __name__ == "__main__":
     stds: Dict[str, float] = ds_train.get_stds()
     start_date = pd.to_datetime("2008-12-09", format="%Y-%m-%d")
     end_date = pd.to_datetime("2010-12-08", format="%Y-%m-%d")
-    ds_val = CamelsGB(seq_length=sequence_length, mode="eval", dates=[start_date, end_date],
+    ds_val = CamelsGB(seq_length=sequence_length, mode="train", dates=[start_date, end_date],
                         means=means, stds=stds)
     val_loader = DataLoader(ds_val, batch_size=2048, shuffle=False, pin_memory=True)
 
     # Test data. We use the feature means/stds of the training period for normalization
     start_date = pd.to_datetime("2010-12-09", format="%Y-%m-%d")
     end_date = pd.to_datetime("2015-09-29", format="%Y-%m-%d")
-    ds_test = CamelsGB(seq_length=sequence_length, mode="eval", dates=[start_date, end_date],
+    ds_test = CamelsGB(seq_length=sequence_length, mode="train", dates=[start_date, end_date],
                         means=means, stds=stds)
     test_loader = DataLoader(ds_test, batch_size=2048, shuffle=False, pin_memory=True)
 
