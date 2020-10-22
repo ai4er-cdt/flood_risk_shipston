@@ -1,6 +1,5 @@
 from typing import Dict, Tuple
 
-import pandas as pd
 import torch
 import torch.nn as nn
 import tqdm
@@ -11,8 +10,7 @@ from src.models.metrics import calc_nse
 from src.preprocessing.camelsgb import CamelsGB
 
 # TODO: implement optional wandb integration that doesn't activate unless wandb
-# is installed?
-# TODO: options.py with argparse
+# is installed? No, just mention in readme that you can do `wandb off`.
 
 
 def train_epoch(model: torch.nn.Module, optimizer: torch.optim.Optimizer, loader: torch.utils.data.DataLoader,
@@ -88,50 +86,46 @@ def eval_model(model: torch.nn.Module, loader: torch.utils.data.DataLoader) -> T
     return torch.cat(obs), torch.cat(preds)
 
 
-if __name__ == "__main__":
-    device: torch.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    hidden_size: int = 10  # Number of LSTM cells
-    dropout_rate: float = 0.4  # Dropout rate of the final fully connected Layer [0.0, 1.0] - used for regularisation
-    # and as a way to extract uncertainty (MC dropout)
-    learning_rate: float = 3e-3
-    sequence_length: int = 365  # Length of the meteorological record provided to the network
-    batch_size = 256  # 512 is the value used in the paper
-
-    # TODO: Pass list of features as an argument with sensible default, have num_features calculated from this
-    # and passed to LSTM_Model for input.
+def train_model(config):
+    device_str: str = config.gpu_ids[0]
+    device: torch.device = torch.device(f"cuda:{device_str}" if config.cuda and torch.cuda.is_available() else "cpu")
 
     # Training data
-    start_date: pd.Timestamp = pd.to_datetime("2000-12-09", format="%Y-%m-%d")
-    end_date: pd.Timestamp = pd.to_datetime("2008-12-08", format="%Y-%m-%d")
-    ds_train = CamelsGB(seq_length=sequence_length, mode="train", dates=[start_date, end_date])
+    ds_train = CamelsGB(features=config.dataset.features,
+                        seq_length=config.dataset.seq_length,
+                        train_test_split=config.dataset.train_test_split,
+                        train=True,
+                        basin_ids=[config.dataset.basin_ids],
+                        dates=config.mode.date_range)
     # Use `pin_memory=True` here for asynchronous data transfer to the GPU.
-    tr_loader = DataLoader(ds_train, batch_size=batch_size, shuffle=True, pin_memory=True)
-
-    # Validation data. We use the feature means/stds of the training period for normalization
+    train_loader = DataLoader(dataset=ds_train,
+                           batch_size=config.mode.batch_size,
+                           shuffle=config.dataset.shuffle,
+                           num_workers=config.dataset.num_workers,
+                           pin_memory=True)
+    # Test data. We use the feature means/stds of the training period for normalization
     means: Dict[str, float] = ds_train.get_means()
     stds: Dict[str, float] = ds_train.get_stds()
-    start_date = pd.to_datetime("2008-12-09", format="%Y-%m-%d")
-    end_date = pd.to_datetime("2010-12-08", format="%Y-%m-%d")
-    ds_val = CamelsGB(seq_length=sequence_length, mode="train", dates=[start_date, end_date],
+    ds_test = CamelsGB(features=config.dataset.features,
+                        seq_length=config.dataset.seq_length,
+                        train_test_split=config.dataset.train_test_split,
+                        train=False,
+                        basin_ids=[config.dataset.basin_ids],
+                        dates=config.mode.date_range,
                         means=means, stds=stds)
-    val_loader = DataLoader(ds_val, batch_size=2048, shuffle=False, pin_memory=True)
+    test_loader = DataLoader(dataset=ds_test, batch_size=2048, shuffle=config.dataset.shuffle,
+                        num_workers=config.dataset.num_workers, pin_memory=True)
 
-    # Test data. We use the feature means/stds of the training period for normalization
-    start_date = pd.to_datetime("2010-12-09", format="%Y-%m-%d")
-    end_date = pd.to_datetime("2015-09-29", format="%Y-%m-%d")
-    ds_test = CamelsGB(seq_length=sequence_length, mode="train", dates=[start_date, end_date],
-                        means=means, stds=stds)
-    test_loader = DataLoader(ds_test, batch_size=2048, shuffle=False, pin_memory=True)
-
-    model = LSTM_Model(hidden_size=hidden_size, dropout_rate=dropout_rate).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    model = LSTM_Model(hidden_units=config.model.hidden_units,
+                       num_features=5,
+                       dropout_rate=config.model.dropout_rate,
+                       num_layers=config.model.num_layers).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.mode.learning_rate)
     loss_func = nn.MSELoss()
 
-    n_epochs = 50
-
-    for i in range(n_epochs):
-        train_epoch(model, optimizer, tr_loader, loss_func, i + 1)
-        obs, preds = eval_model(model, val_loader)
-        preds = ds_val.local_rescale(preds.numpy(), variable='output')
+    for i in range(config.mode.epochs):
+        train_epoch(model, optimizer, train_loader, loss_func, i + 1)
+        obs, preds = eval_model(model, test_loader)
+        preds = ds_test.local_rescale(preds.numpy(), variable='output')
         nse: float = calc_nse(obs.numpy(), preds)
         tqdm.tqdm.write(f"Validation NSE: {nse:.2f}")

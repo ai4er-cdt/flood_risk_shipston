@@ -1,6 +1,16 @@
-prefix: ./env
+name: shipston
 channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.8 
+  - python=3.8
+  - pandas
+  - numpy
+  - matplotlib
+  - scipy
+  - jupyter
+  - torch>=1.0
+  - tqdm
+  - pip
+  - pip:
+    - hydra-core
