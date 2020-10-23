@@ -9,8 +9,10 @@ dependencies:
   - matplotlib
   - scipy
   - jupyter
-  - torch>=1.0
+  - torch>=1.4
   - tqdm
   - pip
   - pip:
     - hydra-core
+    - pytorch-lightning
+    - wandb

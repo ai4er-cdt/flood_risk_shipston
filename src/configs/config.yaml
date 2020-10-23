@@ -3,16 +3,15 @@ defaults:
   - model: lstm
 
 dataset:
-  data_dir: null # Default is src/data
-  features: ['precipitation', 'temperature', 'shortwave_rad', 'peti', 'humidity']
+  features: {'base' : ['precipitation', 'temperature', 'shortwave_rad', 'peti', 'humidity']}
+  data_dir: null # Default is src/data/CAMELS-GB
   seq_length: 365 # Number of previous days of meterological data to use for one prediction.
   train_test_split: '2010' # Split date to separate the data into the train and test sets.
-  basin_ids: all
-  shuffle: False # Whether to shuffle the dataset randomly.
+  basins_frac: 0.01 # Fraction of basins that will be combined to create the dataset.
+  shuffle: True # Whether to shuffle the dataset randomly.
   num_workers: 8 # Number of subprocesses to use for data loading.
 
 cuda: True # Whether to use the GPU.
 gpu_ids: [0] # List of GPU device IDs.
 seed: 42 # Random seed.
-save_dir: null # Default is log/
 run_name: ??? # Mandatory string argument that describes the run.

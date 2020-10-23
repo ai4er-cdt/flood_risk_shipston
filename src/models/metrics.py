@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def calc_nse(obs: np.ndarray, sim: np.ndarray) -> float:
+def calc_nse(obs: np.ndarray, preds: np.ndarray) -> float:
     """
     Calculate Nash-Sutcliff-Efficiency.
 
@@ -10,21 +10,21 @@ def calc_nse(obs: np.ndarray, sim: np.ndarray) -> float:
 
     Args:
         obs (np.ndarray): Array containing the observations.
-        sim (np.ndarray): Array containing the predictions.
+        preds (np.ndarray): Array containing the predictions.
 
     Returns:
         float: NSE value.
     """
     # only consider time steps where observations are available
-    sim = np.delete(sim, np.argwhere(obs < 0), axis=0)
+    preds = np.delete(preds, np.argwhere(obs < 0), axis=0)
     obs = np.delete(obs, np.argwhere(obs < 0), axis=0)
 
     # check for NaNs in observations
-    sim = np.delete(sim, np.argwhere(np.isnan(obs)), axis=0)
+    preds = np.delete(preds, np.argwhere(np.isnan(obs)), axis=0)
     obs = np.delete(obs, np.argwhere(np.isnan(obs)), axis=0)
 
     denominator: float = np.sum((obs - np.mean(obs)) ** 2)
-    numerator: float = np.sum((sim - obs) ** 2)
+    numerator: float = np.sum((preds - obs) ** 2)
     nse_val: float = 1 - numerator / denominator
 
     return nse_val

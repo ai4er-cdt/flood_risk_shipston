@@ -1,10 +1,10 @@
 import os
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 import torch
-from pandas._libs.tslibs import Timestamp
 from src import constants
 from torch.utils.data import Dataset
 
@@ -17,9 +17,9 @@ class CamelsGB(Dataset):
     discharge data for 671 hydrological basins/catchments in the UK. This class
     loads data from an arbitrary number of these basins (by default all 671).
     """
-    def __init__(self, features: List[str], seq_length: int, train_test_split: str, train: bool = True,
-                 basin_ids: Optional[List[str]] = None, dates: Optional[List[str]] = None,
-                 means: Optional[Dict[str, float]] = None, stds: Optional[Dict[str, float]] = None) -> None:
+    def __init__(self, data_dir: Path, features: List[str], basins_frac: float, dates: List[str], train: bool = True,
+                 seq_length: int = 365, train_test_split: str = '2010', means: Optional[Dict[str, float]] = None,
+                 stds: Optional[Dict[str, float]] = None) -> None:
         """
         Initialise dataset containing the data of basin(s) from CAMELS-GB.
 
@@ -29,22 +29,23 @@ class CamelsGB(Dataset):
         basins.
 
         Args:
+            data_dir (Path): Path object containing the directory with the data.
             features (List): List of strings with the features to include in the
             dataset.
-            seq_length (int): Length of the time window of
-            meteorological input provided for one time step of prediction.
+            basins_frac (float): Fraction of basins to load data from. 1.0 will
+            load all 671 basins, 0.0 will load none.
+            dates (List):  List of string dates of the start and end of the
+            discharge mode. This overrides the `train_test_split` and `train`
+            parameters.
+            train (bool, optional): If `True`, creates dataset from the training
+            set, otherwise creates from the test set. Defaults to `True`.
+            seq_length (int): Length of the time window of meteorological input
+            provided for one time step of prediction.
             train_test_split (str): Date to split the data into the
             train and test sets. Discharge values from before this date will be
             part of the training set, those after will be the test set. Specific
             days should be passed in the format `YYYY-MM-DD`, years can be
             passed as `YYYY`. Defaults to `'2010-01-01'`.
-            train (bool, optional): If `True`, creates dataset from training
-            set, otherwise creates from test set. Defaults to `True`.
-            basin_ids (str, optional): List of string IDs of the basins to load
-            data from. If `None`, will load all 671 basins. Defaults to `None`.
-            dates (List, optional):  List of `pd.DateTime` dates of the start
-            and end of the discharge mode. This overrides the `train_test_split`
-            and `train` parameters. Defaults to `None`.
             means: (Dict, optional): Means of input and output features derived
             from the training period. Has to be provided when `train=False`. Can
             be retrieved by calling `get_means()` on the dataset.
@@ -52,15 +53,17 @@ class CamelsGB(Dataset):
             from the training period. Has to be provided when `train=False`. Can
             be retrieved by calling `get_stds()` on the dataset.
         """
-        self.features = features
+        self.data_dir: Path = data_dir
+        self.features = list(features)
+        self.train: bool = train
         self.seq_length: int = seq_length
         self.train_test_split: pd.Timestamp = pd.Timestamp(train_test_split)
-        self.train: bool = train
-        self.basin_ids: Tuple = constants.ALL_BASINS if basin_ids is None else tuple(basin_ids)
-        # TODO: Redo ALL_BASINS
-        if not set([int(self.basin_ids[0])]).issubset(set(constants.ALL_BASINS)):
-            raise ValueError("All elements in `basin_ids` must be valid basin IDs.")
-        self.dates: Optional[List[pd.Timestamp]] = [pd.Timestamp(date) for date in dates] if dates is not None else None
+        self.dates: List = [pd.Timestamp(date) for date in dates] if len(dates) != 0 else dates
+
+        if not 0.0 <= basins_frac <= 1.0:
+            raise ValueError(f"The basins fraction {basins_frac} must be in the range [0, 1].")
+        self.basin_ids: Tuple = constants.ALL_BASINS[:int(len(constants.ALL_BASINS) * basins_frac)]
+
         if not self.train and means is not None and stds is not None:
             self.means: Dict[str, float] = means
             self.stds: Dict[str, float] = stds
@@ -84,54 +87,48 @@ class CamelsGB(Dataset):
         return self.stds
 
     def _load_data(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        data_dir: str = os.path.join(constants.SRC_PATH, 'data', 'CAMELS-GB')
-        first_basin: str = self.basin_ids[0]
+        first_basin: int = self.basin_ids[0]
         filename: str = f'CAMELS_GB_hydromet_timeseries_{first_basin}_19701001-20150930.csv'
-        # TODO: Investigate ListConfig
-        feature_columns: List[str] = ['date'] + list(self.features) + ['discharge_spec']
+        feature_columns: List[str] = ['date'] + self.features + ['discharge_spec']
 
-        data: pd.DataFrame = pd.read_csv(os.path.join(data_dir, 'timeseries', filename),
+        data: pd.DataFrame = pd.read_csv(os.path.join(self.data_dir, 'timeseries', filename),
                                          usecols=feature_columns)
         data.rename(columns={"discharge_spec": "QObs(mm/d)"}, inplace=True)
         data.date = pd.to_datetime(data.date, dayfirst=True, format="%Y-%m-%d")
         data['basin_id'] = first_basin
 
-        if self.dates is not None:
-            data = self._crop_dates(data, start_date=self.dates[0], end_date=self.dates[1])
-        elif self.train:
-            data = self._crop_dates(data, start_date=data.date[0], end_date=self.train_test_split)
-        elif not self.train:
-            data = self._crop_dates(data, start_date=self.train_test_split, end_date=data.date.iloc[-1])
+        if len(self.dates) == 0 and self.train:
+            self.dates = [data.date[0], self.train_test_split]
+        elif len(self.dates) == 0 and not self.train:
+            self.dates = [self.train_test_split, data.date.iloc[-1]]
+        data = self._crop_dates(data, start_date=self.dates[0], end_date=self.dates[1])
         data = self._remove_nan_regions(data)
         # List to keep track of start and end indexes of each basin in the final array.
         basin_indexes: List[Tuple] = [(0, len(data))]
 
         if len(self.basin_ids) > 1:
             for basin_idx in range(1, len(self.basin_ids)):
-                basin: str = self.basin_ids[basin_idx]
+                basin: int = self.basin_ids[basin_idx]
                 filename = f'CAMELS_GB_hydromet_timeseries_{basin}_19701001-20150930.csv'
 
-                new_data: pd.DataFrame = pd.read_csv(os.path.join(data_dir, 'timeseries', filename),
+                new_data: pd.DataFrame = pd.read_csv(os.path.join(self.data_dir, 'timeseries', filename),
                                                      usecols=feature_columns)
                 new_data.rename(columns={"discharge_spec": "QObs(mm/d)"}, inplace=True)
                 new_data.date = pd.to_datetime(new_data.date, dayfirst=True, format="%Y-%m-%d")
                 new_data['basin_id'] = basin
 
-                if self.dates is not None:
-                    new_data = self._crop_dates(new_data, start_date=self.dates[0], end_date=self.dates[1])
-                elif self.train:
-                    new_data = self._crop_dates(new_data, start_date=new_data.date[0], end_date=self.train_test_split)
-                elif not self.train:
-                    new_data = self._crop_dates(new_data, start_date=self.train_test_split,
-                                                end_date=new_data.date.iloc[-1])
+                if len(self.dates) == 0 and self.train:
+                    self.dates = [new_data.date[0], self.train_test_split]
+                elif len(self.dates) == 0 and not self.train:
+                    self.dates = [self.train_test_split, new_data.date.iloc[-1]]
+                new_data = self._crop_dates(new_data, start_date=self.dates[0], end_date=self.dates[1])
                 new_data = self._remove_nan_regions(new_data)
 
                 basin_indexes.append((basin_indexes[-1][1], basin_indexes[-1][1] + len(new_data)))
                 data = pd.concat([data, new_data], axis=0, ignore_index=True)
                 del new_data
 
-        # TODO: store fully processed file of all basins combined that will be saved the first time this is run?
-        # if training mode store means and stds
+        # If training mode store means and stds.
         if self.train:
             self.means = data[self.features + ['QObs(mm/d)']].mean().to_dict()
             self.stds = data[self.features + ['QObs(mm/d)']].std().to_dict()
@@ -141,8 +138,6 @@ class CamelsGB(Dataset):
         y: np.ndarray = data['QObs(mm/d)'].to_numpy(dtype=np.float32)
 
         # Normalise data, reshape for LSTM training and remove invalid samples.
-        # Normalisation is done because it speeds up training (better gradient flow) and allows the model to give
-        # appropriate weight to each feature
         x = self._local_normalization(x, variable='inputs')
         x, y = self._reshape_data(x, y, basin_indexes)
 
@@ -150,7 +145,7 @@ class CamelsGB(Dataset):
             # Normalise discharge - only needs to be done when training.
             y = self._local_normalization(y, variable='output')
 
-        # Convert arrays to torch tensors
+        # Convert arrays to torch tensors.
         return torch.from_numpy(x), torch.from_numpy(y)
 
     def _local_normalization(self, data_array: np.ndarray, variable: str) -> np.ndarray:
@@ -176,16 +171,16 @@ class CamelsGB(Dataset):
         elif variable == 'output':
             data_array = (data_array - self.means["QObs(mm/d)"]) / self.stds["QObs(mm/d)"]
         else:
-            raise RuntimeError(f"Unknown variable type {type(variable)}")
+            raise TypeError(f"Unknown variable type {type(variable)}")
 
         return data_array
 
-    def local_rescale(self, data_array: np.ndarray, variable: str) -> np.ndarray:
+    def local_rescale(self, data_array: torch.Tensor, variable: str) -> torch.Tensor:
         """
         Rescale input/output features back to original size with local mean/std.
 
         Args:
-            data_array (np.ndarray): Array containing the features as a matrix.
+            data_array (torch.Tensor): Array containing the features as a matrix.
             variable (str): Either `'inputs'` or `'output'` depending on which
             feature will be normalized.
 
@@ -193,17 +188,17 @@ class CamelsGB(Dataset):
             RuntimeError: If `variable` is not `'inputs'` or `'output'`.
 
         Returns:
-            np.ndarray: Array of the same shape as `data_array` containing the
+            torch.Tensor: Array of the same shape as `data_array` containing the
             normalized features.
         """
         if variable == 'inputs':
-            means = np.array([self.means[feature] for feature in self.features])
-            stds = np.array([self.stds[feature] for feature in self.features])
+            means = torch.tensor([self.means[feature] for feature in self.features], dtype=torch.float32)
+            stds = torch.tensor([self.stds[feature] for feature in self.features], dtype=torch.float32)
             data_array = data_array * stds + means
         elif variable == 'output':
             data_array = data_array * self.stds["QObs(mm/d)"] + self.means["QObs(mm/d)"]
         else:
-            raise RuntimeError(f"Unknown variable type {type(variable)}")
+            raise TypeError(f"Unknown variable type {type(variable)}")
 
         return data_array
 
@@ -297,8 +292,9 @@ class CamelsGB(Dataset):
                 nan_regions.append(row - 1)
                 in_nanregion = False
         # Remove the rows with nans.
-        for idx in range(len(nan_regions)):
-            if idx % 2 != 0:
-                nan_regions[idx] = nan_regions[idx] - self.seq_length + 1
-                df.drop(df.index[nan_regions[idx - 1]:nan_regions[idx] + 1], inplace=True)
+        for idx in range(1, len(nan_regions), 2):
+            # There are three hard things in programming - naming things and off-by-one errors. :-)
+            start_nan = nan_regions[idx - 1]
+            end_nan = nan_regions[idx] - self.seq_length + 1
+            df.drop(df.index[start_nan:end_nan + 1], inplace=True)
         return df

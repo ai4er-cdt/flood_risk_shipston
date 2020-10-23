@@ -1,4 +1,5 @@
 # @package _group_
+type: LSTM
 num_layers: 1 # Number of LSTM layers in the model.
 bidirectional: False # Whether to use Bidirectional LSTM.
 hidden_units: 50 # Number of hidden units/LSTM cells per layer.
