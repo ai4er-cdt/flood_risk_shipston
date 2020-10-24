@@ -1,3 +1,3 @@
-from lstm import LSTM_Model
-from metrics import calc_nse
-from runoff_model import RunoffModel
+from src.models.lstm import LSTM_Model
+from src.models.metrics import calc_nse
+from src.models.runoff_model import RunoffModel

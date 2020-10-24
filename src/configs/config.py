@@ -1,11 +1,12 @@
+import itertools
 import multiprocessing
+import os
 from dataclasses import dataclass
-from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
+import pandas as pd
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING, DictConfig, OmegaConf
-
 from src import constants
 
 
@@ -49,7 +50,8 @@ class LSTMConfig(ModelConfig):
 @dataclass
 class DatasetConfig:
     data_dir: Optional[str] = MISSING
-    features: List[str] = MISSING
+    features: Dict[str, Any] = MISSING
+    num_features: int = MISSING
     seq_length: int = MISSING
     train_test_split: str = MISSING
     basins_frac: float = MISSING
@@ -63,7 +65,7 @@ class ConfigClass:
     model: ModelConfig = MISSING
     dataset: DatasetConfig = DatasetConfig()
     cuda: bool = MISSING
-    gpu_ids: List[int] = MISSING
+    gpus: int = MISSING
     seed: int = MISSING
     run_name: str = MISSING
 
@@ -78,22 +80,37 @@ cs.store(group="model", name="lstm", node=LSTMConfig)
 def validate_config(cfg: DictConfig) -> DictConfig:
     if cfg.run_name is None:
         raise TypeError("The `run_name` argument is mandatory.")
-    # TODO: Implement dict schema for talking about features
-    cfg.dataset.num_features = len(cfg.dataset.features)
-    # TODO: Validate all string arguments
+    if not set(cfg.dataset.features.keys()).issubset(set(constants.DATASET_KEYS)):
+        raise ValueError(f"Keys in dataset.features must be from {constants.DATASET_KEYS}.")
+    if not set(itertools.chain(*cfg.dataset.features.values())).issubset(set(constants.ALL_FEATURES)):
+        raise ValueError("Feature names must be valid and non-timeseries features must not contain NaNs.")
+    cfg.dataset.num_features = sum([len(x) for x in cfg.dataset.features.values()])
+    # Set data_dir
+    if cfg.dataset.data_dir is None:
+        cfg.dataset.data_dir = os.path.join(constants.SRC_PATH, 'data', 'CAMELS-GB')
+    else:
+        os.makedirs(cfg.dataset.data_dir, exist_ok=True)
+    # Validate train_test_split and date_range
+    try:
+        pd.Timestamp(cfg.dataset.train_test_split)
+        [pd.Timestamp(date) for date in cfg.mode.date_range]
+    except ValueError:
+        print("The parameters `dataset.train_test_split` and `mode.date_range` must be valid dates.")
+    # Validate seq_length
+    if cfg.dataset.seq_length <= 0:
+        raise ValueError("The parameter `dataset.seq_length` must be > 0.")
+    # Validate basins_frac
+    if not 0.0 <= cfg.dataset.basins_frac <= 1.0:
+        raise ValueError(f"The basins fraction {cfg.dataset.basins_frac} must be in the range [0, 1].")
     # Make sure num_workers isn't too high.
     core_count = multiprocessing.cpu_count()
     if cfg.dataset.num_workers > core_count * 2:
         cfg.dataset.num_workers = core_count
-    # Set data_dir
-    if cfg.dataset.data_dir is None:
-        cfg.dataset.data_dir = Path(constants.SRC_PATH) / 'data' / 'CAMELS-GB'
+    if not cfg.cuda:
+        cfg.gpus = 0
+    # TODO: Get num GPUs that exist.
 
     print('----------------- Options ---------------')
     print(OmegaConf.to_yaml(cfg))
     print('----------------- End -------------------')
     return cfg
-
-
-def validate_features(cfg: DictConfig, feature_list: List[str]) -> DictConfig:
-    pass

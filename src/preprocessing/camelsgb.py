@@ -1,5 +1,5 @@
 import os
-from pathlib import Path
+from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -17,9 +17,9 @@ class CamelsGB(Dataset):
     discharge data for 671 hydrological basins/catchments in the UK. This class
     loads data from an arbitrary number of these basins (by default all 671).
     """
-    def __init__(self, data_dir: Path, features: List[str], basins_frac: float, dates: List[str], train: bool = True,
-                 seq_length: int = 365, train_test_split: str = '2010', means: Optional[Dict[str, float]] = None,
-                 stds: Optional[Dict[str, float]] = None) -> None:
+    def __init__(self, data_dir: str, features: Dict[str, List[str]], basins_frac: float, dates: List[str],
+                 train: bool = True, seq_length: int = 365, train_test_split: str = '2010',
+                 means: Optional[Dict[str, float]] = None, stds: Optional[Dict[str, float]] = None) -> None:
         """
         Initialise dataset containing the data of basin(s) from CAMELS-GB.
 
@@ -29,8 +29,9 @@ class CamelsGB(Dataset):
         basins.
 
         Args:
-            data_dir (Path): Path object containing the directory with the data.
-            features (List): List of strings with the features to include in the
+            data_dir (str): Path to the directory with the data.
+            features (Dict): Dictionary where the keys are the feature type and
+            the values are lists of strings with the features to include in the
             dataset.
             basins_frac (float): Fraction of basins to load data from. 1.0 will
             load all 671 basins, 0.0 will load none.
@@ -53,16 +54,20 @@ class CamelsGB(Dataset):
             from the training period. Has to be provided when `train=False`. Can
             be retrieved by calling `get_stds()` on the dataset.
         """
-        self.data_dir: Path = data_dir
-        self.features = list(features)
+        self.data_dir: str = data_dir
+        # Use defaultdict to avoid errors when we ask for a key that isn't in the dict.
+        self.features: Dict[str, List[str]] = defaultdict(list, features)
         self.train: bool = train
         self.seq_length: int = seq_length
         self.train_test_split: pd.Timestamp = pd.Timestamp(train_test_split)
-        self.dates: List = [pd.Timestamp(date) for date in dates] if len(dates) != 0 else dates
-
-        if not 0.0 <= basins_frac <= 1.0:
-            raise ValueError(f"The basins fraction {basins_frac} must be in the range [0, 1].")
-        self.basin_ids: Tuple = constants.ALL_BASINS[:int(len(constants.ALL_BASINS) * basins_frac)]
+        self.dates: List = [pd.Timestamp(date) for date in dates]
+        self.basin_ids: List[int] = list(constants.ALL_BASINS[:int(len(constants.ALL_BASINS) * basins_frac)])
+        # Remove two particular basins from the list if we use either of these features since these are the only two
+        # basins with NaN values for these potentially useful features.
+        if 'dpsbar' in self.features['topographic'] or 'elem_mean' in self.features['topographic']:
+            for basin_id in (18011, 26006):
+                if basin_id in self.basin_ids:
+                    self.basin_ids.remove(basin_id)
 
         if not self.train and means is not None and stds is not None:
             self.means: Dict[str, float] = means
@@ -89,13 +94,21 @@ class CamelsGB(Dataset):
     def _load_data(self) -> Tuple[torch.Tensor, torch.Tensor]:
         first_basin: int = self.basin_ids[0]
         filename: str = f'CAMELS_GB_hydromet_timeseries_{first_basin}_19701001-20150930.csv'
-        feature_columns: List[str] = ['date'] + self.features + ['discharge_spec']
+        timeseries_columns: List[str] = ['date'] + list(self.features['timeseries']) + ['discharge_spec']
 
         data: pd.DataFrame = pd.read_csv(os.path.join(self.data_dir, 'timeseries', filename),
-                                         usecols=feature_columns)
+                                         usecols=timeseries_columns, parse_dates=[0], infer_datetime_format=True)
         data.rename(columns={"discharge_spec": "QObs(mm/d)"}, inplace=True)
         data.date = pd.to_datetime(data.date, dayfirst=True, format="%Y-%m-%d")
         data['basin_id'] = first_basin
+
+        for key in constants.DATASET_KEYS[1:]:
+            filename = f'CAMELS_GB_{key}_attributes.csv'
+            attr_df: pd.DataFrame = pd.read_csv(os.path.join(self.data_dir, filename),
+                                                usecols=['gauge_id'] + list(self.features[key]),
+                                                index_col='gauge_id')
+            for name, row in attr_df.loc[first_basin][self.features[key]].iteritems():
+                data[name] = row
 
         if len(self.dates) == 0 and self.train:
             self.dates = [data.date[0], self.train_test_split]
@@ -112,10 +125,19 @@ class CamelsGB(Dataset):
                 filename = f'CAMELS_GB_hydromet_timeseries_{basin}_19701001-20150930.csv'
 
                 new_data: pd.DataFrame = pd.read_csv(os.path.join(self.data_dir, 'timeseries', filename),
-                                                     usecols=feature_columns)
+                                                     usecols=timeseries_columns, parse_dates=[0],
+                                                     infer_datetime_format=True)
                 new_data.rename(columns={"discharge_spec": "QObs(mm/d)"}, inplace=True)
                 new_data.date = pd.to_datetime(new_data.date, dayfirst=True, format="%Y-%m-%d")
                 new_data['basin_id'] = basin
+
+                for key in constants.DATASET_KEYS[1:]:
+                    filename = f'CAMELS_GB_{key}_attributes.csv'
+                    attr_df = pd.read_csv(os.path.join(self.data_dir, filename),
+                                          usecols=['gauge_id'] + list(self.features[key]),
+                                          index_col='gauge_id')
+                    for name, row in attr_df.loc[basin][self.features[key]].iteritems():
+                        data[name] = row
 
                 if len(self.dates) == 0 and self.train:
                     self.dates = [new_data.date[0], self.train_test_split]
@@ -128,13 +150,16 @@ class CamelsGB(Dataset):
                 data = pd.concat([data, new_data], axis=0, ignore_index=True)
                 del new_data
 
+        # Feature names in `data` with a constant ordering independent of `data` or the features dict.
+        self.feature_names: List[str] = [col for col in constants.ALL_FEATURES if col in list(data.columns)]
+        # TODO: Consider storing means and stds from all basins combined and only using those.
         # If training mode store means and stds.
         if self.train:
-            self.means = data[self.features + ['QObs(mm/d)']].mean().to_dict()
-            self.stds = data[self.features + ['QObs(mm/d)']].std().to_dict()
+            self.means = data[self.feature_names + ['QObs(mm/d)']].mean().to_dict()
+            self.stds = data[self.feature_names + ['QObs(mm/d)']].std().to_dict()
 
         # Extract input and output features from dataframe loaded above.
-        x: np.ndarray = data[self.features].to_numpy(dtype=np.float32)
+        x: np.ndarray = data[self.feature_names].to_numpy(dtype=np.float32)
         y: np.ndarray = data['QObs(mm/d)'].to_numpy(dtype=np.float32)
 
         # Normalise data, reshape for LSTM training and remove invalid samples.
@@ -165,8 +190,8 @@ class CamelsGB(Dataset):
             normalized features.
         """
         if variable == 'inputs':
-            means = np.array([self.means[feature] for feature in self.features])
-            stds = np.array([self.stds[feature] for feature in self.features])
+            means = np.array([self.means[feature] for feature in self.feature_names])
+            stds = np.array([self.stds[feature] for feature in self.feature_names])
             data_array = (data_array - means) / stds
         elif variable == 'output':
             data_array = (data_array - self.means["QObs(mm/d)"]) / self.stds["QObs(mm/d)"]
@@ -191,9 +216,10 @@ class CamelsGB(Dataset):
             torch.Tensor: Array of the same shape as `data_array` containing the
             normalized features.
         """
+        # TODO: Check shapes.
         if variable == 'inputs':
-            means = torch.tensor([self.means[feature] for feature in self.features], dtype=torch.float32)
-            stds = torch.tensor([self.stds[feature] for feature in self.features], dtype=torch.float32)
+            means = torch.tensor([self.means[feature] for feature in self.feature_names], dtype=torch.float32)
+            stds = torch.tensor([self.stds[feature] for feature in self.feature_names], dtype=torch.float32)
             data_array = data_array * stds + means
         elif variable == 'output':
             data_array = data_array * self.stds["QObs(mm/d)"] + self.means["QObs(mm/d)"]

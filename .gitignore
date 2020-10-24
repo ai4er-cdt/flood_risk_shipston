@@ -91,11 +91,9 @@ io/
 # History files
 .history
 
-# Ignore data, log, and saved outputs folder
+# Ignore data and log folder
 data
 data/
 ./data/
-outputs
-outputs/
-log
-log/
+logs
+logs/

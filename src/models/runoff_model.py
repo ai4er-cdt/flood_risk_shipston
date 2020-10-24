@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import pytorch_lightning as pl
 import torch
-from src import constants
 from src.models import LSTM_Model, calc_nse
 from src.preprocessing import CamelsGB
 from torch.utils.data import DataLoader
@@ -12,7 +11,9 @@ from torch.utils.data import DataLoader
 
 class RunoffModel(pl.LightningModule):
     def __init__(self, config) -> None:
+        super().__init__()
         self.config = config
+        # Long term - think about using hydra.utils.instantiate here.
         self.model = LSTM_Model(hidden_units=self.config.model.hidden_units,
                                 num_features=self.config.dataset.num_features,
                                 dropout_rate=self.config.model.dropout_rate,
@@ -25,7 +26,7 @@ class RunoffModel(pl.LightningModule):
 
     def training_step(self, batch):
         x, y = batch
-        y_hat = self(x)
+        y_hat = self(x)  # Calls self.forward(x)
         loss = self.loss(y_hat, y)
         return loss
 
@@ -86,6 +87,10 @@ class RunoffModel(pl.LightningModule):
         ax.set_xlabel("Date")
         ax.set_ylabel("Discharge (mm/d)")
         # Save to save_dir and log to wandb.
+
+    def prepare_data(self) -> None:
+        # TODO: Download data here.
+        raise NotImplementedError
 
     def setup(self, stage: str):
         # `stage` can be either `fit` or `test`.

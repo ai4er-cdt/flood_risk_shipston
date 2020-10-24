@@ -10,7 +10,6 @@ dependencies:
   - scipy
   - jupyter
   - torch>=1.4
-  - tqdm
   - pip
   - pip:
     - hydra-core
