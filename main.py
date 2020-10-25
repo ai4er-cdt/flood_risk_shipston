@@ -14,7 +14,7 @@ def main(cfg) -> None:
     if cfg.mode.train:
         train_model(cfg)
     else:
-        # Add code here later for testing.
+        # Add code here later for testing/finetuning.
         raise NotImplementedError
 
 

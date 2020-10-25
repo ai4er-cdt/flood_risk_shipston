@@ -9,6 +9,7 @@ dependencies:
   - matplotlib
   - scipy
   - jupyter
+  - pillow
   - torch>=1.4
   - pip
   - pip:

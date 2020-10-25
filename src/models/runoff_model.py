@@ -1,9 +1,15 @@
+import os
+import shutil
+import zipfile
 from typing import Dict, List
 
 import matplotlib.pyplot as plt
-import pandas as pd
 import pytorch_lightning as pl
+import requests
 import torch
+import wandb
+from PIL import Image
+from src import constants
 from src.models import LSTM_Model, calc_nse
 from src.preprocessing import CamelsGB
 from torch.utils.data import DataLoader
@@ -20,21 +26,20 @@ class RunoffModel(pl.LightningModule):
                                 num_layers=self.config.model.num_layers)
         self.loss = torch.nn.MSELoss()
 
-    def forward(self, batch):
-        x, y = batch
+    def configure_optimizers(self):
+        opt = torch.optim.Adam(self.parameters(), lr=self.config.mode.learning_rate)
+        return opt
+
+    def forward(self, x):
         return self.model(x)
 
-    def training_step(self, batch):
+    def training_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)  # Calls self.forward(x)
         loss = self.loss(y_hat, y)
         return loss
 
-    def configure_optimizers(self):
-        opt = torch.optim.Adam(self.parameters(), lr=self.config.mode.learning_rate)
-        return opt
-
-    def validation_step(self, batch):
+    def validation_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
         return y, y_hat
@@ -46,11 +51,15 @@ class RunoffModel(pl.LightningModule):
             ys_list.append(y)
             preds_list.append(y_hat)
         preds = self.train_set.local_rescale(torch.cat(preds_list), variable='output')
-        nse: float = calc_nse(torch.cat(ys_list), preds)
-        self.log('NSE', nse)
+        test_metric: float = calc_nse(torch.cat(ys_list).numpy(), preds.numpy())
+        self.log(self.config.mode.test_metric, test_metric)
 
-    def test_step(self, batch):
-        return self.validation_step(batch)
+    def test_step(self, batch, batch_idx):
+        return self.validation_step(batch, batch_idx)
+
+    def on_test_epoch_start(self):
+        if self.config.mode.mc_dropout:
+            self.model.train()
 
     def test_epoch_end(self, outputs: List) -> None:
         ys_list = []
@@ -58,39 +67,63 @@ class RunoffModel(pl.LightningModule):
         for (y, y_hat) in outputs:
             ys_list.append(y)
             preds_list.append(y_hat)
-        ys = torch.cat(ys_list)
         preds = self.train_set.local_rescale(torch.cat(preds_list), variable='output')
-        nse: float = calc_nse(ys, preds)
-        self.log('NSE', nse)
 
-        # Plot results
-        start_date = self.test_set.dates[0]
-        end_date = self.test_set.dates[1] + pd.DateOffset(days=1)
-        date_range = pd.date_range(start_date, end_date)
-        fig, ax = plt.subplots(figsize=(16, 8))
-        # Play around with alpha here to see uncertainty better!
-        ax.plot(date_range, ys, label="observation", alpha=0.8)
-        # Replace dropout_preds_mean with preds if dropout section skipped
         if self.config.mode.mc_dropout:
-            # TODO: implement full MC dropout in the model.
-            raise NotImplementedError
+            self.preds: torch.Tensor = torch.cat((self.preds, preds), dim=1) if hasattr(self, 'preds') else preds
         else:
-            ax.plot(date_range, preds, label="prediction")
+            self.ys = torch.cat(ys_list)
+            self.preds = preds
+            self.test_metric: float = calc_nse(self.ys.numpy(), preds.numpy())
+            self.log(self.config.mode.test_metric, self.test_metric)
 
-        # ax.plot(date_range, dropout_preds_mean, label="prediction")
-        # ax.fill_between(date_range, dropout_preds_mean - np.sqrt(dropout_preds_var), dropout_preds_mean +
-        # np.sqrt(dropout_preds_var), alpha=0.5,color='orange', #label = 'pred uncertainty')
-        # Hash out this line if dropout section skipped
+    def plot_results(self) -> None:
+        fig, ax = plt.subplots(figsize=(16, 8))
+        x_axis: List[int] = list(range(len(self.ys)))
+        # Play around with alpha here to see uncertainty better!
+        ax.plot(x_axis, self.ys, label="observation", alpha=0.8)
+        ax.plot(x_axis, self.preds, label="prediction")
+        if self.config.mode.mc_dropout:
+            preds_var, preds_mean = torch.var_mean(self.preds, dim=1)
+            ax.fill_between(x_axis, preds_mean - torch.sqrt(preds_var), preds_mean +
+                            torch.sqrt(preds_var), alpha=0.5, color='orange', label='pred uncertainty')
+            plot_name: str = "Results-MCDropout"
+        else:
+            plot_name = "Results"
         ax.legend()
-        ax.set_title(f"Test set NSE: {nse:.3f}")
-        ax.xaxis.set_tick_params(rotation=90)
-        ax.set_xlabel("Date")
+        ax.set_title(f"Test set NSE: {self.test_metric:.3f}")
+        # ax.xaxis.set_tick_params(rotation=90)
+        ax.set_xlabel("Day")
         ax.set_ylabel("Discharge (mm/d)")
-        # Save to save_dir and log to wandb.
+        # Save plot to png file.
+        fig.savefig(os.path.join(constants.SAVE_PATH, self.config.run_name, f"{plot_name.lower()}.png"))
+        # Convert plot to PIL image and log to wandb.
+        pil_image = Image.frombytes('RGB', fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
+        self.logger.experiment.log({plot_name: wandb.Image(pil_image, mode='RGB', caption=plot_name)})
 
-    def prepare_data(self) -> None:
-        # TODO: Download data here.
-        raise NotImplementedError
+    def prepare_data(self):
+        """Download CAMELS-GB from Dropbox link and extract it to `data_dir`."""
+        camels_dir: str = os.path.join(self.config.dataset.data_dir, 'CAMELS-GB')
+        # Check if data exists already.
+        if not os.path.exists(camels_dir) or not os.path.isdir(camels_dir) or not os.listdir(camels_dir):
+            write_path: str = os.path.join(self.config.dataset.data_dir, f"{constants.DATASET_ID}.zip")
+            # Download from Dropbox URL.
+            req = requests.get(constants.DATASET_URL, stream=True)
+            with open(write_path, 'wb') as file:
+                for chunk in req.iter_content(chunk_size=128):
+                    file.write(chunk)
+            # Extract zip file.
+            with zipfile.ZipFile(write_path, 'r') as zip_ref:
+                zip_ref.extractall(self.config.dataset.data_dir)
+            # Move contents of inner directory to CAMELS-GB directory.
+            source_dir: str = os.path.join(self.config.dataset.data_dir, constants.DATASET_ID, 'data')
+            os.mkdir(camels_dir)
+            file_names: List[str] = os.listdir(source_dir)
+            for file_name in file_names:
+                shutil.move(os.path.join(source_dir, file_name), os.path.join(camels_dir, file_name))
+            # Delete zip file and waste folder.
+            shutil.rmtree(os.path.join(self.config.dataset.data_dir, constants.DATASET_ID))
+            os.remove(write_path)
 
     def setup(self, stage: str):
         # `stage` can be either `fit` or `test`.
@@ -122,7 +155,8 @@ class RunoffModel(pl.LightningModule):
         return dataloader
 
     def val_dataloader(self):
-        dataloader = DataLoader(dataset=self.test_set, batch_size=2048, shuffle=self.config.dataset.shuffle,
+        # Best practice to use shuffle=False for validation and testing.
+        dataloader = DataLoader(dataset=self.test_set, batch_size=2048, shuffle=False,
                                 num_workers=self.config.dataset.num_workers, pin_memory=True)
         return dataloader
 

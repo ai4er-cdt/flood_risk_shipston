@@ -91,9 +91,11 @@ io/
 # History files
 .history
 
-# Ignore data and log folder
+# Ignore data, logs, and wandb settings folders.
 data
 data/
 ./data/
 logs
 logs/
+wandb
+wandb/

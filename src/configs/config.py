@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
+import torch
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING, DictConfig, OmegaConf
 from src import constants
@@ -23,10 +24,12 @@ class TrainConfig(ModeConfig):
     learning_rate: float = MISSING
     optimiser: str = MISSING
     loss_fn: str = MISSING
+    test_metric: str = MISSING
     checkpoint_freq: int = MISSING
     log_steps: int = MISSING
     fine_tune: bool = MISSING
     mc_dropout: bool = MISSING
+    mc_dropout_iters: int = MISSING
 
 
 @dataclass
@@ -65,6 +68,7 @@ class ConfigClass:
     model: ModelConfig = MISSING
     dataset: DatasetConfig = DatasetConfig()
     cuda: bool = MISSING
+    parallel_engine: Optional[str] = MISSING
     gpus: int = MISSING
     seed: int = MISSING
     run_name: str = MISSING
@@ -87,7 +91,7 @@ def validate_config(cfg: DictConfig) -> DictConfig:
     cfg.dataset.num_features = sum([len(x) for x in cfg.dataset.features.values()])
     # Set data_dir
     if cfg.dataset.data_dir is None:
-        cfg.dataset.data_dir = os.path.join(constants.SRC_PATH, 'data', 'CAMELS-GB')
+        cfg.dataset.data_dir = os.path.join(constants.SRC_PATH, 'data')
     else:
         os.makedirs(cfg.dataset.data_dir, exist_ok=True)
     # Validate train_test_split and date_range
@@ -108,7 +112,8 @@ def validate_config(cfg: DictConfig) -> DictConfig:
         cfg.dataset.num_workers = core_count
     if not cfg.cuda:
         cfg.gpus = 0
-    # TODO: Get num GPUs that exist.
+        cfg.parallel_engine = None
+    cfg.gpus = min(torch.cuda.device_count(), cfg.gpus)
 
     print('----------------- Options ---------------')
     print(OmegaConf.to_yaml(cfg))

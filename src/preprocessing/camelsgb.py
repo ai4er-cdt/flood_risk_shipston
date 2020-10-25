@@ -61,7 +61,7 @@ class CamelsGB(Dataset):
         self.seq_length: int = seq_length
         self.train_test_split: pd.Timestamp = pd.Timestamp(train_test_split)
         self.dates: List = [pd.Timestamp(date) for date in dates]
-        self.basin_ids: List[int] = list(constants.ALL_BASINS[:int(len(constants.ALL_BASINS) * basins_frac)])
+        self.basin_ids: List[int] = list(constants.ALL_BASINS[:round(len(constants.ALL_BASINS) * basins_frac)])
         # Remove two particular basins from the list if we use either of these features since these are the only two
         # basins with NaN values for these potentially useful features.
         if 'dpsbar' in self.features['topographic'] or 'elem_mean' in self.features['topographic']:
@@ -150,7 +150,7 @@ class CamelsGB(Dataset):
                 data = pd.concat([data, new_data], axis=0, ignore_index=True)
                 del new_data
 
-        # Feature names in `data` with a constant ordering independent of `data` or the features dict.
+        # List of feature names in `data` with a constant ordering independent of `data` or the features dict.
         self.feature_names: List[str] = [col for col in constants.ALL_FEATURES if col in list(data.columns)]
         # TODO: Consider storing means and stds from all basins combined and only using those.
         # If training mode store means and stds.

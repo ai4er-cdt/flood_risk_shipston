@@ -4,7 +4,7 @@ defaults:
 
 dataset:
   features: {'timeseries' : ['precipitation', 'temperature', 'shortwave_rad', 'peti', 'humidity']}
-  data_dir: null # Default is src/data/CAMELS-GB
+  data_dir: null # Default is src/data/
   seq_length: 365 # Number of previous days of meterological data to use for one prediction.
   train_test_split: '2010' # Split date to separate the data into the train and test sets.
   basins_frac: 0.01 # Fraction of basins that will be combined to create the dataset.
@@ -12,6 +12,7 @@ dataset:
   num_workers: 8 # Number of subprocesses to use for data loading.
 
 cuda: True # Whether to use GPUs.
+parallel_engine: 'ddp' # PyTorch parallelisation algorithm to use. ddp=DistributedDataParallel
 gpus: 2 # Number of GPUs to use.
 seed: 42 # Random seed.
 run_name: ??? # Mandatory string argument that describes the run.

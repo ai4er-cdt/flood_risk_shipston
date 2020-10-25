@@ -9,7 +9,10 @@ SRC_PATH = os.path.dirname(constants_path)
 PROJECT_PATH = os.path.dirname(SRC_PATH)
 SAVE_PATH = os.path.join(PROJECT_PATH, 'logs')
 os.makedirs(SAVE_PATH, exist_ok=True)
-
+# Dropbox URL of dataset.
+DATASET_URL = "https://www.dropbox.com/s/4x7db07gjakl7sk/8344e4f3-d2ea-44f5-8afa-86d2987543a9.zip?raw=1"
+# Filename of dataset
+DATASET_ID = "8344e4f3-d2ea-44f5-8afa-86d2987543a9"
 # Load sorted tuple of all basin ids
 with open(os.path.join(SRC_PATH, 'constants.pickle'), 'rb') as file:
     ALL_BASINS: Tuple[int] = pickle.load(file)
