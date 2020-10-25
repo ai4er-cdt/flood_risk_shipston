@@ -1,5 +1,5 @@
 name: ship-evt3
-# prefix: ./env
+prefix: ./env
 channels:
   - conda-forge
   - defaults
