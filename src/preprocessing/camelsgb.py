@@ -127,7 +127,7 @@ class CamelsGB(Dataset):
             new_data = self._remove_nan_regions(new_data)
             if basin_idx == 0:
                 # List to keep track of start and end indexes of each basin in the final array.
-                basin_indexes.append((0, len(data)))
+                basin_indexes.append((0, len(new_data)))
                 data = new_data
             else:
                 basin_indexes.append((basin_indexes[-1][1], basin_indexes[-1][1] + len(new_data)))

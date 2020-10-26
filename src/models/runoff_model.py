@@ -68,11 +68,11 @@ class RunoffModel(pl.LightningModule):
             ys_list.append(y)
             preds_list.append(y_hat)
         preds = self.train_set.local_rescale(torch.cat(preds_list), variable='output')
+        self.ys = torch.cat(ys_list)
 
         if self.config.mode.mc_dropout:
             self.preds: torch.Tensor = torch.cat((self.preds, preds), dim=1) if hasattr(self, 'preds') else preds
         else:
-            self.ys = torch.cat(ys_list)
             self.preds = preds
             self.test_metric: float = calc_nse(self.ys.numpy(), preds.numpy())
             self.log(self.config.mode.test_metric, self.test_metric)
