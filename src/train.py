@@ -17,12 +17,16 @@ def train_model(config):
     accelerator=config.parallel_engine: Set PyTorch parallel execution engine to
     DistributedDataParallel by default, which is faster than DataParallel with
     > 2 GPUs or multiple nodes. If `config.cuda=False` then this is `None`.
+
     auto_select_gpus=config.cuda: Find the `gpus` most available GPUs to use,
     but only if we select `config.cuda=True` to allow GPU training.
+
     benchmark=True: Enable cuDNN optimisation algorithms (speeds up training
     when model input size is constant).
+
     deterministic=True: Forces model output to be deterministic given the same
     random seed.
+
     prepare_data_per_node=False: Calls the RunoffModel.prepare_data() hook (to
     download the dataset) only on one node, since we are using a cluster with a
     shared filesystem.
@@ -36,7 +40,7 @@ def train_model(config):
     run_dir: str = os.path.join(constants.SAVE_PATH, config.run_name)
     wandb_logger = WandbLogger(name=config.run_name, save_dir=run_dir, project='shipston', config=config)
     ckpt_path: str = os.path.join(run_dir, 'checkpoints', "{epoch}")
-    # TODO: Try monitor=self.config.mode.test_metric here.
+    # TODO: Try monitor=config.mode.test_metric here.
     ckpt = ModelCheckpoint(filepath=ckpt_path, period=config.mode.checkpoint_freq)
     lr_logger = LearningRateMonitor()  # TODO: Test logging_interval='epoch'
 

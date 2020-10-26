@@ -78,6 +78,7 @@ class RunoffModel(pl.LightningModule):
             self.log(self.config.mode.test_metric, self.test_metric)
 
     def plot_results(self) -> None:
+        # TODO: Think about test dataset chronology.
         fig, ax = plt.subplots(figsize=(16, 8))
         x_axis: List[int] = list(range(len(self.ys)))
         # Play around with alpha here to see uncertainty better!

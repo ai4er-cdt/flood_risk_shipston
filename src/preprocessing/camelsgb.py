@@ -54,7 +54,7 @@ class CamelsGB(Dataset):
             from the training period. Has to be provided when `train=False`. Can
             be retrieved by calling `get_stds()` on the dataset.
         """
-        self.data_dir: str = data_dir
+        self.data_dir: str = os.path.join(data_dir, 'CAMELS-GB')
         # Use defaultdict to avoid errors when we ask for a key that isn't in the dict.
         self.features: Dict[str, List[str]] = defaultdict(list, features)
         self.train: bool = train
@@ -92,67 +92,50 @@ class CamelsGB(Dataset):
         return self.stds
 
     def _load_data(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        first_basin: int = self.basin_ids[0]
-        filename: str = f'CAMELS_GB_hydromet_timeseries_{first_basin}_19701001-20150930.csv'
         timeseries_columns: List[str] = ['date'] + list(self.features['timeseries']) + ['discharge_spec']
+        basin_indexes: List[Tuple] = []
+        data: pd.DataFrame = None
 
-        data: pd.DataFrame = pd.read_csv(os.path.join(self.data_dir, 'timeseries', filename),
-                                         usecols=timeseries_columns, parse_dates=[0], infer_datetime_format=True)
-        data.rename(columns={"discharge_spec": "QObs(mm/d)"}, inplace=True)
-        data.date = pd.to_datetime(data.date, dayfirst=True, format="%Y-%m-%d")
-        data['basin_id'] = first_basin
+        for basin_idx in range(len(self.basin_ids)):
+            basin: int = self.basin_ids[basin_idx]
+            filename: str = f'CAMELS_GB_hydromet_timeseries_{basin}_19701001-20150930.csv'
 
-        for key in constants.DATASET_KEYS[1:]:
-            filename = f'CAMELS_GB_{key}_attributes.csv'
-            attr_df: pd.DataFrame = pd.read_csv(os.path.join(self.data_dir, filename),
-                                                usecols=['gauge_id'] + list(self.features[key]),
-                                                index_col='gauge_id')
-            for name, row in attr_df.loc[first_basin][self.features[key]].iteritems():
-                data[name] = row
+            new_data: pd.DataFrame = pd.read_csv(os.path.join(self.data_dir, 'timeseries', filename),
+                                                    usecols=timeseries_columns, parse_dates=[0],
+                                                    infer_datetime_format=True)
+            new_data.rename(columns={"discharge_spec": "QObs(mm/d)"}, inplace=True)
+            new_data.date = pd.to_datetime(new_data.date, dayfirst=True, format="%Y-%m-%d")
+            new_data['basin_id'] = basin
 
-        if len(self.dates) == 0 and self.train:
-            self.dates = [data.date[0], self.train_test_split]
-        elif len(self.dates) == 0 and not self.train:
-            self.dates = [self.train_test_split, data.date.iloc[-1]]
-        data = self._crop_dates(data, start_date=self.dates[0], end_date=self.dates[1])
-        data = self._remove_nan_regions(data)
-        # List to keep track of start and end indexes of each basin in the final array.
-        basin_indexes: List[Tuple] = [(0, len(data))]
-
-        if len(self.basin_ids) > 1:
-            for basin_idx in range(1, len(self.basin_ids)):
-                basin: int = self.basin_ids[basin_idx]
-                filename = f'CAMELS_GB_hydromet_timeseries_{basin}_19701001-20150930.csv'
-
-                new_data: pd.DataFrame = pd.read_csv(os.path.join(self.data_dir, 'timeseries', filename),
-                                                     usecols=timeseries_columns, parse_dates=[0],
-                                                     infer_datetime_format=True)
-                new_data.rename(columns={"discharge_spec": "QObs(mm/d)"}, inplace=True)
-                new_data.date = pd.to_datetime(new_data.date, dayfirst=True, format="%Y-%m-%d")
-                new_data['basin_id'] = basin
-
-                for key in constants.DATASET_KEYS[1:]:
-                    filename = f'CAMELS_GB_{key}_attributes.csv'
-                    attr_df = pd.read_csv(os.path.join(self.data_dir, filename),
-                                          usecols=['gauge_id'] + list(self.features[key]),
-                                          index_col='gauge_id')
-                    for name, row in attr_df.loc[basin][self.features[key]].iteritems():
-                        data[name] = row
-
-                if len(self.dates) == 0 and self.train:
-                    self.dates = [new_data.date[0], self.train_test_split]
-                elif len(self.dates) == 0 and not self.train:
-                    self.dates = [self.train_test_split, new_data.date.iloc[-1]]
-                new_data = self._crop_dates(new_data, start_date=self.dates[0], end_date=self.dates[1])
-                new_data = self._remove_nan_regions(new_data)
-
+            for key in constants.DATASET_KEYS[1:]:
+                filename = f'CAMELS_GB_{key}_attributes.csv'
+                attr_df: pd.DataFrame = pd.read_csv(os.path.join(self.data_dir, filename),
+                                                    usecols=['gauge_id'] + list(self.features[key]),
+                                                    index_col='gauge_id')
+                for name, row in attr_df.loc[basin][self.features[key]].iteritems():
+                    if name == 'dom_land_cover':
+                        # Label encoding is needed for only this attribute (in the landcover data).
+                        dom_land_cover_dict = {"Grass and Pasture": 0, "Shrubs": 1, "Crops": 2, "Urban": 3,
+                                               "Deciduous Woodland": 4, "Evergreen Woodland": 5}
+                        row = dom_land_cover_dict[row]
+                    new_data[name] = row
+            if len(self.dates) == 0 and self.train:
+                self.dates = [new_data.date[0], self.train_test_split]
+            elif len(self.dates) == 0 and not self.train:
+                self.dates = [self.train_test_split, new_data.date.iloc[-1]]
+            new_data = self._crop_dates(new_data, start_date=self.dates[0], end_date=self.dates[1])
+            new_data = self._remove_nan_regions(new_data)
+            if basin_idx == 0:
+                # List to keep track of start and end indexes of each basin in the final array.
+                basin_indexes.append((0, len(data)))
+                data = new_data
+            else:
                 basin_indexes.append((basin_indexes[-1][1], basin_indexes[-1][1] + len(new_data)))
                 data = pd.concat([data, new_data], axis=0, ignore_index=True)
-                del new_data
 
         # List of feature names in `data` with a constant ordering independent of `data` or the features dict.
         self.feature_names: List[str] = [col for col in constants.ALL_FEATURES if col in list(data.columns)]
-        # TODO: Consider storing means and stds from all basins combined and only using those.
+        # TODO: Store means and stds from all basins combined and only use those.
         # If training mode store means and stds.
         if self.train:
             self.means = data[self.feature_names + ['QObs(mm/d)']].mean().to_dict()
