@@ -112,6 +112,7 @@ def validate_config(cfg: DictConfig) -> DictConfig:
         cfg.dataset.num_workers = core_count
     if not cfg.cuda:
         cfg.gpus = 0
+    if cfg.gpus <= 1:
         cfg.parallel_engine = None
     cfg.gpus = min(torch.cuda.device_count(), cfg.gpus)
 

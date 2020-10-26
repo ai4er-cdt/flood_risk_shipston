@@ -2,7 +2,7 @@ import os
 
 import torch
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 
 from src import constants
@@ -38,17 +38,17 @@ def train_model(config):
 
     # Setup logging and checkpointing.
     run_dir: str = os.path.join(constants.SAVE_PATH, config.run_name)
-    wandb_logger = WandbLogger(name=config.run_name, save_dir=run_dir, project='shipston', config=config)
+    # Force all runs to log to the herbie/shipston project and allow anonymous logging without a wandb account.
+    wandb_logger = WandbLogger(name=config.run_name, save_dir=run_dir, entity='herbie', project='shipston',
+                               save_code=False, anonymous=True)
     ckpt_path: str = os.path.join(run_dir, 'checkpoints', "{epoch}")
-    # TODO: Try monitor=config.mode.test_metric here.
-    ckpt = ModelCheckpoint(filepath=ckpt_path, period=config.mode.checkpoint_freq)
-    lr_logger = LearningRateMonitor()  # TODO: Test logging_interval='epoch'
+    ckpt = ModelCheckpoint(filepath=ckpt_path, period=config.mode.checkpoint_freq, monitor=config.mode.test_metric,
+                           save_top_k=2, mode='max')
 
     # Instantiate Trainer
     trainer = Trainer(accelerator=config.parallel_engine, auto_select_gpus=config.cuda, gpus=config.gpus,
-                      benchmark=True, deterministic=True, callbacks=[lr_logger], checkpoint_callback=ckpt,
-                      prepare_data_per_node=False, max_epochs=config.mode.epochs, logger=wandb_logger,
-                      log_every_n_steps=config.mode.log_steps)
+                      benchmark=True, deterministic=True, checkpoint_callback=ckpt, prepare_data_per_node=False,
+                      max_epochs=config.mode.epochs, logger=wandb_logger, log_every_n_steps=config.mode.log_steps)
 
     # Train model
     trainer.fit(runoff_model)

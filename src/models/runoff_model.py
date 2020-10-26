@@ -18,6 +18,7 @@ from torch.utils.data import DataLoader
 class RunoffModel(pl.LightningModule):
     def __init__(self, config) -> None:
         super().__init__()
+        self.save_hyperparameters(config)
         self.config = config
         # Long term - think about using hydra.utils.instantiate here.
         self.model = LSTM_Model(hidden_units=self.config.model.hidden_units,
@@ -37,6 +38,7 @@ class RunoffModel(pl.LightningModule):
         x, y = batch
         y_hat = self(x)  # Calls self.forward(x)
         loss = self.loss(y_hat, y)
+        self.log("Loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -67,14 +69,14 @@ class RunoffModel(pl.LightningModule):
         for (y, y_hat) in outputs:
             ys_list.append(y)
             preds_list.append(y_hat)
-        preds = self.train_set.local_rescale(torch.cat(preds_list), variable='output')
-        self.ys = torch.cat(ys_list)
+        preds = self.train_set.local_rescale(torch.cat(preds_list), variable='output').cpu()
+        self.ys = torch.cat(ys_list).cpu()
 
         if self.config.mode.mc_dropout:
             self.preds: torch.Tensor = torch.cat((self.preds, preds), dim=1) if hasattr(self, 'preds') else preds
         else:
             self.preds = preds
-            self.test_metric: float = calc_nse(self.ys.numpy(), preds.numpy())
+            self.test_metric: float = calc_nse(self.ys.numpy(), self.preds.numpy())
             self.log(self.config.mode.test_metric, self.test_metric)
 
     def plot_results(self) -> None:
@@ -89,11 +91,11 @@ class RunoffModel(pl.LightningModule):
             ax.fill_between(x_axis, preds_mean - torch.sqrt(preds_var), preds_mean +
                             torch.sqrt(preds_var), alpha=0.5, color='orange', label='pred uncertainty')
             plot_name: str = "Results-MCDropout"
+            ax.set_title("MC Dropout Results")
         else:
             plot_name = "Results"
+            ax.set_title(f"Test set NSE: {self.test_metric:.3f}")
         ax.legend()
-        ax.set_title(f"Test set NSE: {self.test_metric:.3f}")
-        # ax.xaxis.set_tick_params(rotation=90)
         ax.set_xlabel("Day")
         ax.set_ylabel("Discharge (mm/d)")
         # Save plot to png file.
@@ -107,6 +109,7 @@ class RunoffModel(pl.LightningModule):
         camels_dir: str = os.path.join(self.config.dataset.data_dir, 'CAMELS-GB')
         # Check if data exists already.
         if not os.path.exists(camels_dir) or not os.path.isdir(camels_dir) or not os.listdir(camels_dir):
+            print("Downloading data...")
             write_path: str = os.path.join(self.config.dataset.data_dir, f"{constants.DATASET_ID}.zip")
             # Download from Dropbox URL.
             req = requests.get(constants.DATASET_URL, stream=True)
@@ -125,9 +128,10 @@ class RunoffModel(pl.LightningModule):
             # Delete zip file and waste folder.
             shutil.rmtree(os.path.join(self.config.dataset.data_dir, constants.DATASET_ID))
             os.remove(write_path)
+            print("Data downloaded.")
 
     def setup(self, stage: str):
-        # `stage` can be either `fit` or `test`.
+        # `stage` can be either "fit" or "test".
         self.train_set = CamelsGB(data_dir=self.config.dataset.data_dir,
                                     features=self.config.dataset.features,
                                     basins_frac=self.config.dataset.basins_frac,

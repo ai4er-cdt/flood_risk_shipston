@@ -94,44 +94,46 @@ class CamelsGB(Dataset):
     def _load_data(self) -> Tuple[torch.Tensor, torch.Tensor]:
         timeseries_columns: List[str] = ['date'] + list(self.features['timeseries']) + ['discharge_spec']
         basin_indexes: List[Tuple] = []
-        data: pd.DataFrame = None
+        data_list: List[pd.DataFrame] = []
+
+        def process_df(df: pd.DataFrame, basin_indexes: List[Tuple], loop_idx: int) -> pd.DataFrame:
+            df.rename(columns={"discharge_spec": "QObs(mm/d)"}, inplace=True)
+            df.date = pd.to_datetime(df.date, dayfirst=True, format="%Y-%m-%d")
+            df['basin_id'] = basin
+
+            for key in constants.DATASET_KEYS[1:]:
+                if len(self.features[key]) > 0:
+                    filename = f'CAMELS_GB_{key}_attributes.csv'
+                    attr_df: pd.DataFrame = pd.read_csv(os.path.join(self.data_dir, filename),
+                                                        usecols=['gauge_id'] + list(self.features[key]),
+                                                        index_col='gauge_id')
+                    for name, row in attr_df.loc[basin][self.features[key]].iteritems():
+                        if name == 'dom_land_cover':
+                            # Label encoding is needed for only this attribute (in the landcover data).
+                            dom_land_cover_dict = {"Grass and Pasture": 0, "Shrubs": 1, "Crops": 2, "Urban": 3,
+                                                "Deciduous Woodland": 4, "Evergreen Woodland": 5}
+                            row = dom_land_cover_dict[row]
+                        df[name] = row
+            if len(self.dates) == 0 and self.train:
+                self.dates = [df.date[0], self.train_test_split]
+            elif len(self.dates) == 0 and not self.train:
+                self.dates = [self.train_test_split, df.date.iloc[-1]]
+            df = self._crop_dates(df, start_date=self.dates[0], end_date=self.dates[1])
+            df = self._remove_nan_regions(df)
+            if loop_idx == 0:
+                basin_indexes.append((0, len(df)))
+            else:
+                basin_indexes.append((basin_indexes[-1][1], basin_indexes[-1][1] + len(df)))
+            return df
 
         for basin_idx in range(len(self.basin_ids)):
             basin: int = self.basin_ids[basin_idx]
-            filename: str = f'CAMELS_GB_hydromet_timeseries_{basin}_19701001-20150930.csv'
+            filepath: str = os.path.join(self.data_dir, 'timeseries',
+                                         f'CAMELS_GB_hydromet_timeseries_{basin}_19701001-20150930.csv')
+            data_list.append(process_df(pd.read_csv(filepath, usecols=timeseries_columns, parse_dates=[0],
+                                                    infer_datetime_format=True), basin_indexes, basin_idx))
 
-            new_data: pd.DataFrame = pd.read_csv(os.path.join(self.data_dir, 'timeseries', filename),
-                                                    usecols=timeseries_columns, parse_dates=[0],
-                                                    infer_datetime_format=True)
-            new_data.rename(columns={"discharge_spec": "QObs(mm/d)"}, inplace=True)
-            new_data.date = pd.to_datetime(new_data.date, dayfirst=True, format="%Y-%m-%d")
-            new_data['basin_id'] = basin
-
-            for key in constants.DATASET_KEYS[1:]:
-                filename = f'CAMELS_GB_{key}_attributes.csv'
-                attr_df: pd.DataFrame = pd.read_csv(os.path.join(self.data_dir, filename),
-                                                    usecols=['gauge_id'] + list(self.features[key]),
-                                                    index_col='gauge_id')
-                for name, row in attr_df.loc[basin][self.features[key]].iteritems():
-                    if name == 'dom_land_cover':
-                        # Label encoding is needed for only this attribute (in the landcover data).
-                        dom_land_cover_dict = {"Grass and Pasture": 0, "Shrubs": 1, "Crops": 2, "Urban": 3,
-                                               "Deciduous Woodland": 4, "Evergreen Woodland": 5}
-                        row = dom_land_cover_dict[row]
-                    new_data[name] = row
-            if len(self.dates) == 0 and self.train:
-                self.dates = [new_data.date[0], self.train_test_split]
-            elif len(self.dates) == 0 and not self.train:
-                self.dates = [self.train_test_split, new_data.date.iloc[-1]]
-            new_data = self._crop_dates(new_data, start_date=self.dates[0], end_date=self.dates[1])
-            new_data = self._remove_nan_regions(new_data)
-            if basin_idx == 0:
-                # List to keep track of start and end indexes of each basin in the final array.
-                basin_indexes.append((0, len(new_data)))
-                data = new_data
-            else:
-                basin_indexes.append((basin_indexes[-1][1], basin_indexes[-1][1] + len(new_data)))
-                data = pd.concat([data, new_data], axis=0, ignore_index=True)
+        data = pd.concat(data_list, axis=0, ignore_index=True)
 
         # List of feature names in `data` with a constant ordering independent of `data` or the features dict.
         self.feature_names: List[str] = [col for col in constants.ALL_FEATURES if col in list(data.columns)]
