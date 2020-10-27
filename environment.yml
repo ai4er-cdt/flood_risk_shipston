@@ -1,4 +1,4 @@
-name: ship-evt3
+name: ship-evt4
 prefix: ./env
 channels:
   - conda-forge
