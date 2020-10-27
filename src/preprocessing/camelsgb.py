@@ -1,6 +1,6 @@
 import os
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -18,8 +18,8 @@ class CamelsGB(Dataset):
     loads data from an arbitrary number of these basins (by default all 671).
     """
     def __init__(self, data_dir: str, features: Dict[str, List[str]], basins_frac: float, dates: List[str],
-                 train: bool = True, seq_length: int = 365, train_test_split: str = '2010', precision: int = 32,
-                 means: Optional[Dict[str, float]] = None, stds: Optional[Dict[str, float]] = None) -> None:
+                 train: bool = True, seq_length: int = 365, train_test_split: str = '2010',
+                 precision: int = 32) -> None:
         """
         Initialise dataset containing the data of basin(s) from CAMELS-GB.
 
@@ -50,12 +50,6 @@ class CamelsGB(Dataset):
             precision (int, optional): Whether to load data as single (32-bit)
             or half (16-bit) precision floating points. Can only be 16 or 32.
             Defaults to 32.
-            means (Dict, optional): Means of input and output features derived
-            from the training period. Has to be provided when `train=False`. Can
-            be retrieved by calling `get_means()` on the dataset.
-            stds (Dict, optional): Std of input and output features derived
-            from the training period. Has to be provided when `train=False`. Can
-            be retrieved by calling `get_stds()` on the dataset.
         """
         self.data_dir: str = os.path.join(data_dir, 'CAMELS-GB')
         # Use defaultdict to avoid errors when we ask for a key that isn't in the dict.
@@ -73,12 +67,6 @@ class CamelsGB(Dataset):
                 if basin_id in self.basin_ids:
                     self.basin_ids.remove(basin_id)
 
-        if not self.train and means is not None and stds is not None:
-            self.means: Dict[str, float] = means
-            self.stds: Dict[str, float] = stds
-        elif not self.train and (means is None or stds is None):
-            raise TypeError("When `train=False` it is necessary to pass values to both `means` and `stds`.")
-
         self.x, self.y = self._load_data()
 
         self.num_samples: int = self.x.shape[0]
@@ -88,12 +76,6 @@ class CamelsGB(Dataset):
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         return self.x[idx], self.y[idx]
-
-    def get_means(self) -> Dict[str, float]:
-        return self.means
-
-    def get_stds(self) -> Dict[str, float]:
-        return self.stds
 
     def _load_data(self) -> Tuple[torch.Tensor, torch.Tensor]:
         timeseries_columns: List[str] = ['date'] + list(self.features['timeseries']) + ['discharge_spec']
@@ -141,11 +123,6 @@ class CamelsGB(Dataset):
 
         # List of feature names in `data` with a constant ordering independent of `data` or the features dict.
         self.feature_names: List[str] = [col for col in constants.ALL_FEATURES if col in list(data.columns)]
-        # TODO: Store means and stds from all basins combined and only use those.
-        # If training mode store means and stds.
-        if self.train:
-            self.means = data[self.feature_names + ['QObs(mm/d)']].mean().to_dict()
-            self.stds = data[self.feature_names + ['QObs(mm/d)']].std().to_dict()
 
         # Extract input and output features from dataframe loaded above.
         x: np.ndarray = data[self.feature_names].to_numpy(dtype=self.precision)
@@ -179,11 +156,12 @@ class CamelsGB(Dataset):
             normalized features.
         """
         if variable == 'inputs':
-            means = np.array([self.means[feature] for feature in self.feature_names])
-            stds = np.array([self.stds[feature] for feature in self.feature_names])
+            means = np.array([constants.FEATURE_STATISTICS[feature][0] for feature in self.feature_names])
+            stds = np.array([constants.FEATURE_STATISTICS[feature][1] for feature in self.feature_names])
             data_array = (data_array - means) / stds
         elif variable == 'output':
-            data_array = (data_array - self.means["QObs(mm/d)"]) / self.stds["QObs(mm/d)"]
+            data_array = ((data_array - constants.FEATURE_STATISTICS["QObs(mm/d)"][0]) /
+                          constants.FEATURE_STATISTICS["QObs(mm/d)"][1])
         else:
             raise TypeError(f"Unknown variable type {type(variable)}")
 
@@ -207,11 +185,14 @@ class CamelsGB(Dataset):
         """
         # TODO: Check shapes.
         if variable == 'inputs':
-            means = torch.tensor([self.means[feature] for feature in self.feature_names], dtype=torch.float32)
-            stds = torch.tensor([self.stds[feature] for feature in self.feature_names], dtype=torch.float32)
+            means = torch.tensor([constants.FEATURE_STATISTICS[feature][0] for feature in self.feature_names],
+                                 dtype=torch.float32)
+            stds = torch.tensor([constants.FEATURE_STATISTICS[feature][1] for feature in self.feature_names],
+                                dtype=torch.float32)
             data_array = data_array * stds + means
         elif variable == 'output':
-            data_array = data_array * self.stds["QObs(mm/d)"] + self.means["QObs(mm/d)"]
+            data_array = (data_array * constants.FEATURE_STATISTICS["QObs(mm/d)"][1] +
+                          constants.FEATURE_STATISTICS["QObs(mm/d)"][0])
         else:
             raise TypeError(f"Unknown variable type {type(variable)}")
 

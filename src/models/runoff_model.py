@@ -140,8 +140,6 @@ class RunoffModel(pl.LightningModule):
                                     seq_length=self.config.dataset.seq_length,
                                     train_test_split=self.config.dataset.train_test_split,
                                     precision=self.config.precision)
-        self.means: Dict[str, float] = self.train_set.get_means()
-        self.stds: Dict[str, float] = self.train_set.get_stds()
         self.test_set = CamelsGB(data_dir=self.config.dataset.data_dir,
                                  features=self.config.dataset.features,
                                  basins_frac=self.config.dataset.basins_frac,
@@ -149,8 +147,7 @@ class RunoffModel(pl.LightningModule):
                                  train=False,
                                  seq_length=self.config.dataset.seq_length,
                                  train_test_split=self.config.dataset.train_test_split,
-                                 precision=self.config.precision,
-                                 means=self.means, stds=self.stds)
+                                 precision=self.config.precision)
 
     def train_dataloader(self):
         # Use `pin_memory=True` here for asynchronous data transfer to the GPU.
