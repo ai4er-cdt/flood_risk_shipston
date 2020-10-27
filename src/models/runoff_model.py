@@ -138,7 +138,8 @@ class RunoffModel(pl.LightningModule):
                                     dates=self.config.mode.date_range,
                                     train=True,
                                     seq_length=self.config.dataset.seq_length,
-                                    train_test_split=self.config.dataset.train_test_split)
+                                    train_test_split=self.config.dataset.train_test_split,
+                                    precision=self.config.precision)
         self.means: Dict[str, float] = self.train_set.get_means()
         self.stds: Dict[str, float] = self.train_set.get_stds()
         self.test_set = CamelsGB(data_dir=self.config.dataset.data_dir,
@@ -148,6 +149,7 @@ class RunoffModel(pl.LightningModule):
                                  train=False,
                                  seq_length=self.config.dataset.seq_length,
                                  train_test_split=self.config.dataset.train_test_split,
+                                 precision=self.config.precision,
                                  means=self.means, stds=self.stds)
 
     def train_dataloader(self):

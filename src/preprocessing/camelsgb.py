@@ -18,7 +18,7 @@ class CamelsGB(Dataset):
     loads data from an arbitrary number of these basins (by default all 671).
     """
     def __init__(self, data_dir: str, features: Dict[str, List[str]], basins_frac: float, dates: List[str],
-                 train: bool = True, seq_length: int = 365, train_test_split: str = '2010',
+                 train: bool = True, seq_length: int = 365, train_test_split: str = '2010', precision: int = 32,
                  means: Optional[Dict[str, float]] = None, stds: Optional[Dict[str, float]] = None) -> None:
         """
         Initialise dataset containing the data of basin(s) from CAMELS-GB.
@@ -40,17 +40,20 @@ class CamelsGB(Dataset):
             parameters.
             train (bool, optional): If `True`, creates dataset from the training
             set, otherwise creates from the test set. Defaults to `True`.
-            seq_length (int): Length of the time window of meteorological input
-            provided for one time step of prediction.
-            train_test_split (str): Date to split the data into the
+            seq_length (int, optional): Length of the time window of
+            meteorological input provided for one time step of prediction.
+            train_test_split (str, optional): Date to split the data into the
             train and test sets. Discharge values from before this date will be
             part of the training set, those after will be the test set. Specific
             days should be passed in the format `YYYY-MM-DD`, years can be
             passed as `YYYY`. Defaults to `'2010-01-01'`.
-            means: (Dict, optional): Means of input and output features derived
+            precision (int, optional): Whether to load data as single (32-bit)
+            or half (16-bit) precision floating points. Can only be 16 or 32.
+            Defaults to 32.
+            means (Dict, optional): Means of input and output features derived
             from the training period. Has to be provided when `train=False`. Can
             be retrieved by calling `get_means()` on the dataset.
-            stds: (Dict, optional): Std of input and output features derived
+            stds (Dict, optional): Std of input and output features derived
             from the training period. Has to be provided when `train=False`. Can
             be retrieved by calling `get_stds()` on the dataset.
         """
@@ -61,6 +64,7 @@ class CamelsGB(Dataset):
         self.seq_length: int = seq_length
         self.train_test_split: pd.Timestamp = pd.Timestamp(train_test_split)
         self.dates: List = [pd.Timestamp(date) for date in dates]
+        self.precision = np.float32 if precision == 32 else np.float16
         self.basin_ids: List[int] = list(constants.ALL_BASINS[:round(len(constants.ALL_BASINS) * basins_frac)])
         # Remove two particular basins from the list if we use either of these features since these are the only two
         # basins with NaN values for these potentially useful features.
@@ -94,7 +98,7 @@ class CamelsGB(Dataset):
     def _load_data(self) -> Tuple[torch.Tensor, torch.Tensor]:
         timeseries_columns: List[str] = ['date'] + list(self.features['timeseries']) + ['discharge_spec']
         basin_indexes: List[Tuple] = []
-        data_list: List[pd.DataFrame] = []
+        df_list: List[pd.DataFrame] = []
 
         def process_df(df: pd.DataFrame, basin_indexes: List[Tuple], loop_idx: int) -> pd.DataFrame:
             df.rename(columns={"discharge_spec": "QObs(mm/d)"}, inplace=True)
@@ -130,10 +134,10 @@ class CamelsGB(Dataset):
             basin: int = self.basin_ids[basin_idx]
             filepath: str = os.path.join(self.data_dir, 'timeseries',
                                          f'CAMELS_GB_hydromet_timeseries_{basin}_19701001-20150930.csv')
-            data_list.append(process_df(pd.read_csv(filepath, usecols=timeseries_columns, parse_dates=[0],
+            df_list.append(process_df(pd.read_csv(filepath, usecols=timeseries_columns, parse_dates=[0],
                                                     infer_datetime_format=True), basin_indexes, basin_idx))
 
-        data = pd.concat(data_list, axis=0, ignore_index=True)
+        data = pd.concat(df_list, axis=0, ignore_index=True)
 
         # List of feature names in `data` with a constant ordering independent of `data` or the features dict.
         self.feature_names: List[str] = [col for col in constants.ALL_FEATURES if col in list(data.columns)]
@@ -144,8 +148,8 @@ class CamelsGB(Dataset):
             self.stds = data[self.feature_names + ['QObs(mm/d)']].std().to_dict()
 
         # Extract input and output features from dataframe loaded above.
-        x: np.ndarray = data[self.feature_names].to_numpy(dtype=np.float32)
-        y: np.ndarray = data['QObs(mm/d)'].to_numpy(dtype=np.float32)
+        x: np.ndarray = data[self.feature_names].to_numpy(dtype=self.precision)
+        y: np.ndarray = data['QObs(mm/d)'].to_numpy(dtype=self.precision)
 
         # Normalise data, reshape for LSTM training and remove invalid samples.
         x = self._local_normalization(x, variable='inputs')
@@ -239,8 +243,8 @@ class CamelsGB(Dataset):
                 if not np.isnan(y[i]):
                     num_samples += 1
         # Assign empty numpy arrays with the correct size.
-        x_new = np.empty((num_samples, self.seq_length, num_features), dtype=np.float32)
-        y_new = np.empty((num_samples, 1), dtype=np.float32)
+        x_new = np.empty((num_samples, self.seq_length, num_features), dtype=self.precision)
+        y_new = np.empty((num_samples, 1), dtype=self.precision)
 
         num_samples = 0  # Start new counter so we can index the new arrays.
         for (start_idx, end_idx) in basin_indexes:
@@ -307,5 +311,5 @@ class CamelsGB(Dataset):
             # There are three hard things in programming - naming things and off-by-one errors. :-)
             start_nan = nan_regions[idx - 1]
             end_nan = nan_regions[idx] - self.seq_length + 1
-            df.drop(df.index[start_nan:end_nan + 1], inplace=True)
+            df = df.drop(df.index[start_nan:end_nan + 1])
         return df

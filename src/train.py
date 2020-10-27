@@ -47,8 +47,9 @@ def train_model(config):
 
     # Instantiate Trainer
     trainer = Trainer(accelerator=config.parallel_engine, auto_select_gpus=config.cuda, gpus=config.gpus,
-                      benchmark=True, deterministic=True, checkpoint_callback=ckpt, prepare_data_per_node=False,
-                      max_epochs=config.mode.epochs, logger=wandb_logger, log_every_n_steps=config.mode.log_steps)
+                      benchmark=True, deterministic=True, checkpoint_callback=ckpt, precision=config.precision,
+                      prepare_data_per_node=False, max_epochs=config.mode.epochs, logger=wandb_logger,
+                      log_every_n_steps=config.mode.log_steps)
 
     # Train model
     trainer.fit(runoff_model)

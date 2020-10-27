@@ -10,7 +10,7 @@ dependencies:
   - scipy
   - jupyter
   - pillow
-  - pytorch>=1.4
+  - pytorch>=1.6
   - pip
   - pip:
     - hydra-core

@@ -69,6 +69,7 @@ class ConfigClass:
     dataset: DatasetConfig = DatasetConfig()
     cuda: bool = MISSING
     parallel_engine: Optional[str] = MISSING
+    precision: int = MISSING
     gpus: int = MISSING
     seed: int = MISSING
     run_name: str = MISSING
@@ -106,6 +107,8 @@ def validate_config(cfg: DictConfig) -> DictConfig:
     # Validate basins_frac
     if not 0.0 <= cfg.dataset.basins_frac <= 1.0:
         raise ValueError(f"The basins fraction {cfg.dataset.basins_frac} must be in the range [0, 1].")
+    if cfg.precision != 16 and cfg.precision != 32:
+        raise ValueError(f"The precision {cfg.precision} must be either 16 or 32.")
     # Make sure num_workers isn't too high.
     core_count = multiprocessing.cpu_count()
     if cfg.dataset.num_workers > core_count * 2:
