@@ -26,6 +26,7 @@ class TrainConfig(ModeConfig):
     loss_fn: str = MISSING
     test_metric: str = MISSING
     checkpoint_freq: int = MISSING
+    val_interval: int = MISSING
     log_steps: int = MISSING
     fine_tune: bool = MISSING
     mc_dropout: bool = MISSING

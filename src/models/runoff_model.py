@@ -1,7 +1,7 @@
 import os
 import shutil
 import zipfile
-from typing import Dict, List
+from typing import List
 
 import matplotlib.pyplot as plt
 import pytorch_lightning as pl
@@ -52,8 +52,8 @@ class RunoffModel(pl.LightningModule):
         for (y, y_hat) in outputs:
             ys_list.append(y)
             preds_list.append(y_hat)
-        preds = self.train_set.local_rescale(torch.cat(preds_list), variable='output')
-        test_metric: float = calc_nse(torch.cat(ys_list).numpy(), preds.numpy())
+        preds = self.test_set.local_rescale(torch.cat(preds_list), variable='output')
+        test_metric: float = calc_nse(torch.cat(ys_list).cpu().numpy(), preds.cpu().numpy())
         self.log(self.config.mode.test_metric, test_metric)
 
     def test_step(self, batch, batch_idx):
@@ -69,7 +69,7 @@ class RunoffModel(pl.LightningModule):
         for (y, y_hat) in outputs:
             ys_list.append(y)
             preds_list.append(y_hat)
-        preds = self.train_set.local_rescale(torch.cat(preds_list), variable='output').cpu()
+        preds = self.test_set.local_rescale(torch.cat(preds_list), variable='output').cpu()
         self.ys = torch.cat(ys_list).cpu()
 
         if self.config.mode.mc_dropout:

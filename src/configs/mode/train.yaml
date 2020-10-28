@@ -7,6 +7,7 @@ optimiser: Adam
 loss_fn: MSE
 test_metric: NSE
 checkpoint_freq: 1 # How many epochs we should train for before checkpointing the model.
+val_interval: 5000 # How many steps of gradient descent before running a validation epoch.
 log_steps: 50 # How many gradient steps between each log point.
 fine_tune: False # Whether or not we are fine-tuning on Shipston data.
 date_range: [] # Custom date range for the train dataset, as a list of two strings.

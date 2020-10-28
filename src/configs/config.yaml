@@ -4,11 +4,11 @@ defaults:
 
 dataset:
   features: {'timeseries' : ['precipitation', 'temperature', 'shortwave_rad', 'peti',
-  'humidity', 'pet', 'longwave_rad', 'windspeed']}
+  'humidity', 'windspeed']}
   data_dir: null # Default is src/data/
   seq_length: 365 # Number of previous days of meterological data to use for one prediction.
   train_test_split: '2010' # Split date to separate the data into the train and test sets.
-  basins_frac: 0.5 # Fraction of basins that will be combined to create the dataset.
+  basins_frac: 0.1 # Fraction of basins that will be combined to create the dataset.
   shuffle: True # Whether to shuffle the dataset randomly.
   num_workers: 8 # Number of subprocesses to use for data loading.
 

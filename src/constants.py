@@ -17,7 +17,7 @@ DATASET_ID = "8344e4f3-d2ea-44f5-8afa-86d2987543a9"
 with open(os.path.join(SRC_PATH, 'constants.json')) as json_file:
     data_dict = json.load(json_file)
 
-# Load sorted list of all basin ids
+# Load randomised list of all basin ids
 ALL_BASINS: List[int] = data_dict['ALL_BASINS']
 # List of all feature names except the non-timeseries features containing NaNs.
 # This is to make sure we are not using basin attribute features with NaNs.
