@@ -6,6 +6,8 @@ class NrfaDataCollector(object):
     def __init__(self):
         """
         A quick wrapper around the NRFA API to query data from their servers.
+
+        API explanation: http://nrfaapps.ceh.ac.uk/nrfa/nrfa-api.html
         """
         self.BASE_URL = "https://nrfaapps.ceh.ac.uk/nrfa/ws/"
         self._available_stations = self._get_available_stations()
