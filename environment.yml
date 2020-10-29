@@ -1,8 +1,21 @@
-prefix: ./env
+name: shipston
 channels:
   - conda-forge
   - defaults
+  - pytorch
 dependencies:
   - python=3.8
   - pandas
   - cartopy
+  - numpy
+  - matplotlib
+  - scipy
+  - jupyter
+  - pillow
+  - pytorch=1.7
+  - pip
+  - pip:
+    - hydra-core
+    - pytorch-lightning
+    - wandb
+    - numba<0.52
