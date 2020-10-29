@@ -5,6 +5,7 @@ Created on Thu Oct 29 12:26:17 2020
 @author: Matt
 """
 import numpy as np
+import pickle as pkl
 
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF
@@ -62,6 +63,15 @@ class stage_predictor:
         
         y_pred, sigma = self.regressor.predict(resh_flow, return_std=True)       
         return y_pred, sigma
+    
+    def get_kernel(self):
+        return self.regressor.kernel_
+    
+    def save_model(self, filename):
+        pkl.dump(self.regressor, open(filename, 'wb'))
+        
+    def load_model(self, filename):
+        self.regressor = pkl.load(open(filename, 'rb'))
         
         
         
