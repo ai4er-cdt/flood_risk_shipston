@@ -7,6 +7,7 @@ from typing import Dict, List, Tuple
 constants_path = os.path.realpath(__file__)
 SRC_PATH = os.path.dirname(constants_path)
 PROJECT_PATH = os.path.dirname(SRC_PATH)
+DATA_PATH = os.path.join(PROJECT_PATH, "data")
 SAVE_PATH = os.path.join(PROJECT_PATH, 'logs')
 os.makedirs(SAVE_PATH, exist_ok=True)
 # Dropbox URL of dataset.
