@@ -1,10 +1,11 @@
 import os
 from collections import defaultdict
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
 import torch
+from numba import njit
 from src import constants
 from torch.utils.data import Dataset
 
@@ -59,13 +60,16 @@ class CamelsGB(Dataset):
         self.train_test_split: pd.Timestamp = pd.Timestamp(train_test_split)
         self.dates: List = [pd.Timestamp(date) for date in dates]
         self.precision = np.float32 if precision == 32 else np.float16
-        self.basin_ids: List[int] = list(constants.ALL_BASINS[:round(len(constants.ALL_BASINS) * basins_frac)])
-        # Remove two particular basins from the list if we use either of these features since these are the only two
-        # basins with NaN values for these potentially useful features.
-        if 'dpsbar' in self.features['topographic'] or 'elem_mean' in self.features['topographic']:
-            for basin_id in (18011, 26006):
-                if basin_id in self.basin_ids:
-                    self.basin_ids.remove(basin_id)
+        if self.train:
+            self.basin_ids: List[int] = list(constants.ALL_BASINS[:round(len(constants.ALL_BASINS) * basins_frac)])
+            # Remove two particular basins from the list if we use either of these features since these are the only two
+            # basins with NaN values for these potentially useful features.
+            if 'dpsbar' in self.features['topographic'] or 'elem_mean' in self.features['topographic']:
+                for basin_id in (18011, 26006):
+                    if basin_id in self.basin_ids:
+                        self.basin_ids.remove(basin_id)
+        else:
+            self.basin_ids = [constants.ALL_BASINS[2]]
 
         self.x, self.y = self._load_data()
 
@@ -130,7 +134,7 @@ class CamelsGB(Dataset):
 
         # Normalise data, reshape for LSTM training and remove invalid samples.
         x = self._local_normalization(x, variable='inputs')
-        x, y = self._reshape_data(x, y, basin_indexes)
+        x, y = _reshape_data(x, y, basin_indexes, self.seq_length, self.precision)
 
         if self.train:
             # Normalise discharge - only needs to be done when training.
@@ -183,7 +187,6 @@ class CamelsGB(Dataset):
             torch.Tensor: Array of the same shape as `data_array` containing the
             normalized features.
         """
-        # TODO: Check shapes.
         if variable == 'inputs':
             means = torch.tensor([constants.FEATURE_STATISTICS[feature][0] for feature in self.feature_names],
                                  dtype=torch.float32)
@@ -197,45 +200,6 @@ class CamelsGB(Dataset):
             raise TypeError(f"Unknown variable type {type(variable)}")
 
         return data_array
-
-    def _reshape_data(self, x: np.ndarray, y: np.ndarray, basin_indexes: List[Tuple]) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Reshape matrix data into sample shape for LSTM training.
-
-        Args:
-            x (np.ndarray): Matrix containing input features column wise and
-            time steps row wise.
-            y (np.ndarray): Matrix containing the output feature.
-            basin_indexes (List): List of tuples containing the start and end
-            indexes for each basin, in the form (start_idx, end_idx).
-
-        Returns:
-            Tuple[np.ndarray, np.ndarray]: Two np.ndarrays, the first of shape
-            `(num_samples, seq_length, num_features)`, containing the
-            input data for the LSTM, the second of shape `(num_samples, 1)`
-            containing the expected output for each input sample.
-        """
-        _, num_features = x.shape
-        # Iterate once through all time steps for each basin to calculate number of valid data points.
-        # This is necessary because of short sections of NaNs in the discharge data.
-        num_samples = 0
-        for (start_idx, end_idx) in basin_indexes:
-            for i in range(start_idx + self.seq_length - 1, end_idx):
-                if not np.isnan(y[i]):
-                    num_samples += 1
-        # Assign empty numpy arrays with the correct size.
-        x_new = np.empty((num_samples, self.seq_length, num_features), dtype=self.precision)
-        y_new = np.empty((num_samples, 1), dtype=self.precision)
-
-        num_samples = 0  # Start new counter so we can index the new arrays.
-        for (start_idx, end_idx) in basin_indexes:
-            for i in range(start_idx + self.seq_length - 1, end_idx):
-                if not np.isnan(y[i]):
-                    x_new[num_samples, :, :num_features] = x[i - self.seq_length + 1:i + 1, :]
-                    y_new[num_samples, :] = y[i]
-                    num_samples += 1
-
-        return x_new, y_new
 
     def _crop_dates(self, df: pd.DataFrame, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
         """
@@ -294,3 +258,52 @@ class CamelsGB(Dataset):
             end_nan = nan_regions[idx] - self.seq_length + 1
             df = df.drop(df.index[start_nan:end_nan + 1])
         return df
+
+
+@njit
+def _reshape_data(x: np.ndarray, y: np.ndarray, basin_indexes: List[Tuple], seq_length: int,
+                  precision: Any) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Reshape matrix data into sample shape for LSTM training.
+
+    The numba decorator compiles this function to machine code, achieving
+    potentially large speedups. This function needs to be outside of the class
+    because Numba does not recognise the class type.
+
+    Args:
+        x (np.ndarray): Matrix containing input features column wise and
+        time steps row wise.
+        y (np.ndarray): Matrix containing the output feature.
+        basin_indexes (List): List of tuples containing the start and end
+        indexes for each basin, in the form (start_idx, end_idx).
+        seq_length (int): Length of the time window of
+        meteorological input provided for one time step of prediction.
+        precision (int): Whether to load data as `np.float32` or `np.float16`.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: Two np.ndarrays, the first of shape
+        `(num_samples, seq_length, num_features)`, containing the
+        input data for the LSTM, the second of shape `(num_samples, 1)`
+        containing the expected output for each input sample.
+    """
+    _, num_features = x.shape
+    # Iterate once through all time steps for each basin to calculate number of valid data points.
+    # This is necessary because of short sections of NaNs in the discharge data.
+    num_samples = 0
+    for (start_idx, end_idx) in basin_indexes:
+        for i in range(start_idx + seq_length - 1, end_idx):
+            if not np.isnan(y[i]):
+                num_samples += 1
+    # Assign empty numpy arrays with the correct size.
+    x_new = np.empty((num_samples, seq_length, num_features), dtype=precision)
+    y_new = np.empty((num_samples, 1), dtype=precision)
+
+    num_samples = 0  # Start new counter so we can index the new arrays.
+    for (start_idx, end_idx) in basin_indexes:
+        for i in range(start_idx + seq_length - 1, end_idx):
+            if not np.isnan(y[i]):
+                x_new[num_samples, :, :num_features] = x[i - seq_length + 1:i + 1, :]
+                y_new[num_samples, :] = y[i]
+                num_samples += 1
+
+    return x_new, y_new
