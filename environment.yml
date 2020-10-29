@@ -17,3 +17,4 @@ dependencies:
     - hydra-core
     - pytorch-lightning
     - wandb
+    - numba<0.52

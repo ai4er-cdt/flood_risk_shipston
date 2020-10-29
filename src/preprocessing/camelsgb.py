@@ -1,4 +1,6 @@
+import logging
 import os
+import warnings
 from collections import defaultdict
 from typing import Any, Dict, List, Tuple
 
@@ -60,6 +62,8 @@ class CamelsGB(Dataset):
         self.train_test_split: pd.Timestamp = pd.Timestamp(train_test_split)
         self.dates: List = [pd.Timestamp(date) for date in dates]
         self.precision = np.float32 if precision == 32 else np.float16
+        # Take the first basins_frac * len(basins_list) of basins from the list if training, if testing just test on one
+        # basin for now.
         if self.train:
             self.basin_ids: List[int] = list(constants.ALL_BASINS[:round(len(constants.ALL_BASINS) * basins_frac)])
             # Remove two particular basins from the list if we use either of these features since these are the only two
@@ -70,6 +74,11 @@ class CamelsGB(Dataset):
                         self.basin_ids.remove(basin_id)
         else:
             self.basin_ids = [constants.ALL_BASINS[2]]
+
+        # Suppress Numba deprecation warning.
+        warnings.filterwarnings("ignore", message="\nEncountered the use of a type that is scheduled for ")
+        # Get lightning logger object to print status.
+        self.logger = logging.getLogger("lightning")
 
         self.x, self.y = self._load_data()
 
@@ -87,11 +96,12 @@ class CamelsGB(Dataset):
         df_list: List[pd.DataFrame] = []
 
         def process_df(df: pd.DataFrame, basin_indexes: List[Tuple], loop_idx: int) -> pd.DataFrame:
+            """Take in a dataframe and process it before converting to array."""
             df.rename(columns={"discharge_spec": "QObs(mm/d)"}, inplace=True)
             df.date = pd.to_datetime(df.date, dayfirst=True, format="%Y-%m-%d")
-            df['basin_id'] = basin
-
+            # Iterate through each category of static basin attributes and add the ones in the config yaml as a column.
             for key in constants.DATASET_KEYS[1:]:
+                # Check if any of the features requested are actually in this category, doing this gives large speedup.
                 if len(self.features[key]) > 0:
                     filename = f'CAMELS_GB_{key}_attributes.csv'
                     attr_df: pd.DataFrame = pd.read_csv(os.path.join(self.data_dir, filename),
@@ -104,12 +114,16 @@ class CamelsGB(Dataset):
                                                 "Deciduous Woodland": 4, "Evergreen Woodland": 5}
                             row = dom_land_cover_dict[row]
                         df[name] = row
+            # Crop the date range as much as possible.
             if len(self.dates) == 0 and self.train:
                 self.dates = [df.date[0], self.train_test_split]
             elif len(self.dates) == 0 and not self.train:
                 self.dates = [self.train_test_split, df.date.iloc[-1]]
             df = self._crop_dates(df, start_date=self.dates[0], end_date=self.dates[1])
+            # Remove as many contiguous regions of NaNs as possible.
             df = self._remove_nan_regions(df)
+            # basin_indexes is a list of tuples containing the start and end indexes for each basin,
+            # in the form (start_idx, end_idx).
             if loop_idx == 0:
                 basin_indexes.append((0, len(df)))
             else:
@@ -122,9 +136,9 @@ class CamelsGB(Dataset):
                                          f'CAMELS_GB_hydromet_timeseries_{basin}_19701001-20150930.csv')
             df_list.append(process_df(pd.read_csv(filepath, usecols=timeseries_columns, parse_dates=[0],
                                                     infer_datetime_format=True), basin_indexes, basin_idx))
-
+        # Single concat operation is very fast.
         data = pd.concat(df_list, axis=0, ignore_index=True)
-
+        self.logger.info("Loaded basins into dataframe.")
         # List of feature names in `data` with a constant ordering independent of `data` or the features dict.
         self.feature_names: List[str] = [col for col in constants.ALL_FEATURES if col in list(data.columns)]
 
@@ -133,19 +147,19 @@ class CamelsGB(Dataset):
         y: np.ndarray = data['QObs(mm/d)'].to_numpy(dtype=self.precision)
 
         # Normalise data, reshape for LSTM training and remove invalid samples.
-        x = self._local_normalization(x, variable='inputs')
+        x = self._normalization(x, variable='inputs')
         x, y = _reshape_data(x, y, basin_indexes, self.seq_length, self.precision)
-
+        self.logger.info("Loaded basins into sequences in array")
         if self.train:
             # Normalise discharge - only needs to be done when training.
-            y = self._local_normalization(y, variable='output')
+            y = self._normalization(y, variable='output')
 
         # Convert arrays to torch tensors.
         return torch.from_numpy(x), torch.from_numpy(y)
 
-    def _local_normalization(self, data_array: np.ndarray, variable: str) -> np.ndarray:
+    def _normalization(self, data_array: np.ndarray, variable: str) -> np.ndarray:
         """
-        Normalize input/output features with local mean/std.
+        Normalize input/output features with mean/std from across all basins.
 
         Args:
             data_array (np.ndarray): Array containing the features as a matrix.
@@ -171,9 +185,11 @@ class CamelsGB(Dataset):
 
         return data_array
 
-    def local_rescale(self, data_array: torch.Tensor, variable: str) -> torch.Tensor:
+    def rescale(self, data_array: torch.Tensor, variable: str) -> torch.Tensor:
         """
-        Rescale input/output features back to original size with local mean/std.
+        Rescale input/output features back to original size with mean/std.
+
+        The mean/std is again calculated across all 671 basins.
 
         Args:
             data_array (torch.Tensor): Array containing the features as a matrix.
@@ -266,18 +282,19 @@ def _reshape_data(x: np.ndarray, y: np.ndarray, basin_indexes: List[Tuple], seq_
     """
     Reshape matrix data into sample shape for LSTM training.
 
-    The numba decorator compiles this function to machine code, achieving
-    potentially large speedups. This function needs to be outside of the class
-    because Numba does not recognise the class type.
+    The Numba decorator compiles this function to machine code, speeding up the
+    execution time by several orders of magnitude (cuts loading from 10 minutes
+    to 10 seconds using half of the basins). This function needs to be outside
+    of the class because Numba does not recognise the class type.
 
     Args:
-        x (np.ndarray): Matrix containing input features column wise and
-        time steps row wise.
+        x (np.ndarray): Matrix containing input features column wise and time
+        steps row wise.
         y (np.ndarray): Matrix containing the output feature.
         basin_indexes (List): List of tuples containing the start and end
         indexes for each basin, in the form (start_idx, end_idx).
-        seq_length (int): Length of the time window of
-        meteorological input provided for one time step of prediction.
+        seq_length (int): Length of the time window of meteorological input
+        provided for one time step of prediction.
         precision (int): Whether to load data as `np.float32` or `np.float16`.
 
     Returns:

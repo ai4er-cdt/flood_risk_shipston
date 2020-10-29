@@ -30,6 +30,11 @@ def train_model(config):
     prepare_data_per_node=False: Calls the RunoffModel.prepare_data() hook (to
     download the dataset) only on one node, since we are using a cluster with a
     shared filesystem.
+
+    val_check_interval: If an integer, this is the number of batches before
+    running a validation epoch. If a float, this is the proportion of the
+    training epoch in between each validation epoch. For example, 0.25 means 4
+    validation epochs per training epoch.
     """
     # Set random seeds.
     seed_everything(config.seed)

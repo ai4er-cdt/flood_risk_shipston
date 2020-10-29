@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 import zipfile
@@ -26,6 +27,7 @@ class RunoffModel(pl.LightningModule):
                                 dropout_rate=self.config.model.dropout_rate,
                                 num_layers=self.config.model.num_layers)
         self.loss = torch.nn.MSELoss()
+        self.printer = logging.getLogger("lightning")
 
     def configure_optimizers(self):
         opt = torch.optim.Adam(self.parameters(), lr=self.config.mode.learning_rate)
@@ -52,7 +54,7 @@ class RunoffModel(pl.LightningModule):
         for (y, y_hat) in outputs:
             ys_list.append(y)
             preds_list.append(y_hat)
-        preds = self.test_set.local_rescale(torch.cat(preds_list), variable='output')
+        preds = self.test_set.rescale(torch.cat(preds_list), variable='output')
         test_metric: float = calc_nse(torch.cat(ys_list).cpu().numpy(), preds.cpu().numpy())
         self.log(self.config.mode.test_metric, test_metric)
 
@@ -69,7 +71,7 @@ class RunoffModel(pl.LightningModule):
         for (y, y_hat) in outputs:
             ys_list.append(y)
             preds_list.append(y_hat)
-        preds = self.test_set.local_rescale(torch.cat(preds_list), variable='output').cpu()
+        preds = self.test_set.rescale(torch.cat(preds_list), variable='output').cpu()
         self.ys = torch.cat(ys_list).cpu()
 
         if self.config.mode.mc_dropout:
@@ -77,10 +79,9 @@ class RunoffModel(pl.LightningModule):
         else:
             self.preds = preds
             self.test_metric: float = calc_nse(self.ys.numpy(), self.preds.numpy())
-            self.log(self.config.mode.test_metric, self.test_metric)
+            self.log(f"Test {self.config.mode.test_metric}", self.test_metric)
 
     def plot_results(self) -> None:
-        # TODO: Think about test dataset chronology.
         fig, ax = plt.subplots(figsize=(16, 8))
         x_axis: List[int] = list(range(len(self.ys)))
         # Play around with alpha here to see uncertainty better!
@@ -103,13 +104,14 @@ class RunoffModel(pl.LightningModule):
         # Convert plot to PIL image and log to wandb.
         pil_image = Image.frombytes('RGB', fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
         self.logger.experiment.log({plot_name: wandb.Image(pil_image, mode='RGB', caption=plot_name)})
+        self.printer.info("Plot generated and saved.")
 
     def prepare_data(self):
         """Download CAMELS-GB from Dropbox link and extract it to `data_dir`."""
         camels_dir: str = os.path.join(self.config.dataset.data_dir, 'CAMELS-GB')
         # Check if data exists already.
         if not os.path.exists(camels_dir) or not os.path.isdir(camels_dir) or not os.listdir(camels_dir):
-            print("Downloading data...")
+            self.printer.info("Downloading data...")
             write_path: str = os.path.join(self.config.dataset.data_dir, f"{constants.DATASET_ID}.zip")
             # Download from Dropbox URL.
             req = requests.get(constants.DATASET_URL, stream=True)
@@ -128,18 +130,22 @@ class RunoffModel(pl.LightningModule):
             # Delete zip file and waste folder.
             shutil.rmtree(os.path.join(self.config.dataset.data_dir, constants.DATASET_ID))
             os.remove(write_path)
-            print("Data downloaded.")
+            self.printer.info("Data downloaded.")
 
     def setup(self, stage: str):
         # `stage` can be either "fit" or "test".
-        self.train_set = CamelsGB(data_dir=self.config.dataset.data_dir,
-                                    features=self.config.dataset.features,
-                                    basins_frac=self.config.dataset.basins_frac,
-                                    dates=self.config.mode.date_range,
-                                    train=True,
-                                    seq_length=self.config.dataset.seq_length,
-                                    train_test_split=self.config.dataset.train_test_split,
-                                    precision=self.config.precision)
+        if stage == 'fit':
+            self.printer.info("Loading training set.")
+            self.train_set = CamelsGB(data_dir=self.config.dataset.data_dir,
+                                      features=self.config.dataset.features,
+                                      basins_frac=self.config.dataset.basins_frac,
+                                      dates=self.config.mode.date_range,
+                                      train=True,
+                                      seq_length=self.config.dataset.seq_length,
+                                      train_test_split=self.config.dataset.train_test_split,
+                                      precision=self.config.precision)
+            self.printer.info("Loaded training set.")
+        self.printer.info("Loading test set.")
         self.test_set = CamelsGB(data_dir=self.config.dataset.data_dir,
                                  features=self.config.dataset.features,
                                  basins_frac=self.config.dataset.basins_frac,
@@ -148,9 +154,10 @@ class RunoffModel(pl.LightningModule):
                                  seq_length=self.config.dataset.seq_length,
                                  train_test_split=self.config.dataset.train_test_split,
                                  precision=self.config.precision)
+        self.printer.info("Loaded test set.")
 
     def train_dataloader(self):
-        # Use `pin_memory=True` here for asynchronous data transfer to the GPU.
+        # Use `pin_memory=True` here for asynchronous data transfer to the GPU, speeding up data loading.
         dataloader = DataLoader(dataset=self.train_set,
                                 batch_size=self.config.mode.batch_size,
                                 shuffle=self.config.dataset.shuffle,

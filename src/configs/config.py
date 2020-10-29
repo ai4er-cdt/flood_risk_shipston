@@ -26,7 +26,7 @@ class TrainConfig(ModeConfig):
     loss_fn: str = MISSING
     test_metric: str = MISSING
     checkpoint_freq: int = MISSING
-    val_interval: int = MISSING
+    val_interval: float = MISSING
     log_steps: int = MISSING
     fine_tune: bool = MISSING
     mc_dropout: bool = MISSING
@@ -92,10 +92,7 @@ def validate_config(cfg: DictConfig) -> DictConfig:
         raise ValueError("Feature names must be valid and non-timeseries features must not contain NaNs.")
     cfg.dataset.num_features = sum([len(x) for x in cfg.dataset.features.values()])
     # Set data_dir
-    if cfg.dataset.data_dir is None:
-        cfg.dataset.data_dir = os.path.join(constants.SRC_PATH, 'data')
-    else:
-        os.makedirs(cfg.dataset.data_dir, exist_ok=True)
+    cfg.dataset.data_dir = os.path.join(constants.SRC_PATH, 'data')
     # Validate train_test_split and date_range
     try:
         pd.Timestamp(cfg.dataset.train_test_split)
