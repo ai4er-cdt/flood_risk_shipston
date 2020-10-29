@@ -1,5 +1,6 @@
 import requests
 from typing import List
+import pandas as pd
 
 
 class NrfaDataCollector(object):
@@ -14,11 +15,12 @@ class NrfaDataCollector(object):
 
     @property
     def available_stations(self) -> List[int]:
+        """Returns the list of available station IDs."""
         return self._available_stations
 
     def _assert_valid_id(self, station_id: int) -> None:
         """
-        Asserts that a given station id is valid
+        Asserts that a given station id is valid.
 
         Args:
             station_id (int): The station id to check
@@ -27,10 +29,24 @@ class NrfaDataCollector(object):
             station_id in self.available_stations
         ), f"Station id {station_id} does not exist."
 
+    def _raise_response_error(self, response: requests.Response) -> None:
+        """
+        Raises an Exception detailing the Respone's error code.
+
+        Args:
+            response (requests.Response): The response received from a web server
+
+        Raises:
+            Exception: Exception with info on why the request failed.
+        """
+        failure_info = response.content.decode().split("<p>")[-1].split("</p>")[0]
+        raise Exception(
+            f"Request failed with status code: {response.status_code} "
+            f"and error message {failure_info}"
+        )
+
     def _get_available_stations(self) -> List[int]:
-        """
-        Collects the list of all valid station ids from the NRFA API.
-        """
+        """Collects the list of all valid station ids from the NRFA API."""
         response = requests.get(f"{self.BASE_URL}station-ids?format=json-object")
         return response.json()["station-ids"]
 
@@ -154,10 +170,7 @@ class NrfaDataCollector(object):
         if int(response.status_code) == 200:
             return response.json()
         else:
-            failure_info = response.content.decode().split("<p>")[-1].split("</p>")[0]
-            raise Exception(
-                f"Request failed with status code: {response.status_code} and error message {failure_info}"
-            )
+            self._raise_response_error(response=response)
 
     def get_timeseries(self, station_id: int, data_type: str) -> dict:
         """
@@ -215,7 +228,17 @@ class NrfaDataCollector(object):
         if int(response.status_code) == 200:
             return response.json()
         else:
-            failure_info = response.content.decode().split("<p>")[-1].split("</p>")[0]
-            raise Exception(
-                f"Request failed with status code: {response.status_code} and error message {failure_info}"
-            )
+            self._raise_response_error(response=response)
+
+    @staticmethod
+    def _nrfa_timeseries_to_pandas(timeseries_json: dict) -> pd.Series:
+
+        # Extract timeseries data stream
+        data_stream = timeseries_json["data-stream"]
+        name = timeseries_json["data-type"]["name"]
+        units = timeseries_json["data-type"]["units"]
+        # Parse data stream
+        dates = pd.to_datetime(data_stream[::2], format="%Y-%m-%d")
+        values = data_stream[1::2]
+        # Return pandas Series
+        return pd.Series(data=values, index=dates, name=f"{name} [{units}]")
