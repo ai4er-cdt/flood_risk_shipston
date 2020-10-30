@@ -31,8 +31,8 @@ class stage_predictor:
         Because computing K(xi,xj) with 400,000 samples uses lots of memory
         (who would have guessed)
         
-        flow_data - entire flow dataset (with NaNs removed)
-        stage_data - entire stage dataset (with NaNs removed)
+        flow_data - entire flow dataset (with NaNs removed) - not as pandas series
+        stage_data - entire stage dataset (with NaNs removed) - not as pandas series
         """
         resh_flow = flow_data.reshape(-1,1)
         
