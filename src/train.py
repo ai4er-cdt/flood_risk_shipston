@@ -5,7 +5,7 @@ from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 
-from src import constants
+from src.constants import *
 from src.models import RunoffModel
 
 
@@ -42,7 +42,7 @@ def train_model(config):
     runoff_model = RunoffModel(config)
 
     # Setup logging and checkpointing.
-    run_dir: str = os.path.join(constants.SAVE_PATH, config.run_name)
+    run_dir: str = os.path.join(SAVE_PATH, config.run_name)
     # Force all runs to log to the herbie/shipston project and allow anonymous logging without a wandb account.
     wandb_logger = WandbLogger(name=config.run_name, save_dir=run_dir, entity='herbie', project='shipston',
                                save_code=False, anonymous=True)

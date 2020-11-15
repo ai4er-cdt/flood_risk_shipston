@@ -1,7 +1,5 @@
-import logging
 import os
 import warnings
-from collections import defaultdict
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -12,32 +10,19 @@ from src.constants import *
 from src.preprocessing import BaseDataset
 
 
-class CamelsGB(BaseDataset):
-    """
-    Create a PyTorch `Dataset` containing data of basin(s) from CAMELS-GB.
-
-    CAMELS-GB contains forcing data (precipitation, temperature etc.) and
-    discharge data for 671 hydrological basins/catchments in the UK. This class
-    loads data from an arbitrary number of these basins (by default all 671).
-    """
-    def __init__(self, features: Dict[str, List[str]], basins_frac: float, dates: List[str], train: bool = True,
+class ShipstonDataset(BaseDataset):
+    """Create a PyTorch `Dataset` containing timeseries data from Shipston."""
+    def __init__(self, features: Dict[str, List[str]], dates: List[str], train: bool = True,
                  seq_length: int = 365, train_test_split: str = '2010', precision: int = 32) -> None:
         """
-        Initialise dataset containing the data of basin(s) from CAMELS-GB.
-
-        By default, this class loads the data from all 671 basins in the
-        dataset. Alternatively, a list of string basin IDs can be passed to
-        the `basin_ids` argument to selectively load data from a subset of the
-        basins.
+        Initialise dataset containing the timeseries data from Shipston.
 
         Args:
             features (Dict): Dictionary where the keys are the feature type and
             the values are lists of strings with the features to include in the
             dataset.
-            basins_frac (float): Fraction of basins to load data from. 1.0 will
-            load all 671 basins, 0.0 will load none.
-            dates (List):  List of string dates of the start and end of the
-            discharge mode. This overrides the `train_test_split` and `train`
+            dates (List):  List of specified string dates for the start and end
+            of the discharge. This overrides the `train_test_split` and `train`
             parameters.
             train (bool, optional): If `True`, creates dataset from the training
             set, otherwise creates from the test set. Defaults to `True`.
@@ -52,31 +37,15 @@ class CamelsGB(BaseDataset):
             or half (16-bit) precision floating points. Can only be 16 or 32.
             Defaults to 32.
         """
-        self.data_dir: str = os.path.join(DATA_PATH, 'CAMELS-GB')
-        # Use defaultdict to avoid errors when we ask for a key that isn't in the dict.
-        self.features: Dict[str, List[str]] = defaultdict(list, features)
+        self.features: List[str] = features['timeseries']
         self.train: bool = train
         self.seq_length: int = seq_length
         self.train_test_split: pd.Timestamp = pd.Timestamp(train_test_split)
         self.dates: List = [pd.Timestamp(date) for date in dates]
         self.precision = np.float32 if precision == 32 else np.float16
-        # Take the first basins_frac * len(basins_list) of basins from the list if training, if testing just test on one
-        # basin for now.
-        if self.train:
-            self.basin_ids: List[int] = ALL_BASINS[:round(len(ALL_BASINS) * basins_frac)]
-            # Remove two particular basins from the list if we use either of these features since these are the only two
-            # basins with NaN values for these potentially useful features.
-            if 'dpsbar' in self.features['topographic'] or 'elem_mean' in self.features['topographic']:
-                for basin_id in (18011, 26006):
-                    if basin_id in self.basin_ids:
-                        self.basin_ids.remove(basin_id)
-        else:
-            self.basin_ids = [ALL_BASINS[2]]
 
         # Suppress Numba deprecation warning.
         warnings.filterwarnings("ignore", message="\nEncountered the use of a type that is scheduled for ")
-        # Get lightning logger object to print status.
-        self.logger = logging.getLogger("lightning")
 
         self.x, self.y = self._load_data()
 
@@ -89,69 +58,30 @@ class CamelsGB(BaseDataset):
         return self.x[idx], self.y[idx]
 
     def _load_data(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        timeseries_columns: List[str] = ['date'] + list(self.features['timeseries']) + ['discharge_spec']
-        basin_indexes: List[Tuple] = []
-        df_list: List[pd.DataFrame] = []
+        data = pd.read_csv(os.path.join(DATA_PATH, 'shipstonv1.csv'),
+                           parse_dates=[0], infer_datetime_format=True)
+        # Crop the date range as much as possible.
+        if len(self.dates) == 0 and self.train:
+            self.dates = [data.date[0], self.train_test_split]
+        elif len(self.dates) == 0 and not self.train:
+            self.dates = [self.train_test_split, data.date.iloc[-1]]
+        data = self._crop_dates(data, start_date=self.dates[0], end_date=self.dates[1])
+        # Remove as many contiguous regions of NaNs as possible.
+        data = self._remove_nan_regions(data)
 
-        def process_df(df: pd.DataFrame, basin_indexes: List[Tuple], loop_idx: int) -> pd.DataFrame:
-            """Take in a dataframe and process it before converting to array."""
-            df.rename(columns={"discharge_spec": "QObs(mm/d)"}, inplace=True)
-            df.date = pd.to_datetime(df.date, dayfirst=True, format="%Y-%m-%d")
-            # Iterate through each category of static basin attributes and add the ones in the config yaml as a column.
-            for key in DATASET_KEYS[1:]:
-                # Check if any of the features requested are actually in this category, doing this gives large speedup.
-                if len(self.features[key]) > 0:
-                    filename = f'CAMELS_GB_{key}_attributes.csv'
-                    attr_df: pd.DataFrame = pd.read_csv(os.path.join(self.data_dir, filename),
-                                                        usecols=['gauge_id'] + list(self.features[key]),
-                                                        index_col='gauge_id')
-                    for name, row in attr_df.loc[basin][self.features[key]].iteritems():
-                        if name == 'dom_land_cover':
-                            # Label encoding is needed for only this attribute (in the landcover data).
-                            dom_land_cover_dict = {"Grass and Pasture": 0, "Shrubs": 1, "Crops": 2, "Urban": 3,
-                                                "Deciduous Woodland": 4, "Evergreen Woodland": 5}
-                            row = dom_land_cover_dict[row]
-                        df[name] = row
-            # Crop the date range as much as possible.
-            if len(self.dates) == 0 and self.train:
-                self.dates = [df.date[0], self.train_test_split]
-            elif len(self.dates) == 0 and not self.train:
-                self.dates = [self.train_test_split, df.date.iloc[-1]]
-            df = self._crop_dates(df, start_date=self.dates[0], end_date=self.dates[1])
-            # Remove as many contiguous regions of NaNs as possible.
-            df = self._remove_nan_regions(df)
-            # basin_indexes is a list of tuples containing the start and end indexes for each basin,
-            # in the form (start_idx, end_idx).
-            if loop_idx == 0:
-                basin_indexes.append((0, len(df)))
-            else:
-                basin_indexes.append((basin_indexes[-1][1], basin_indexes[-1][1] + len(df)))
-            return df
-
-        for basin_idx in range(len(self.basin_ids)):
-            basin: int = self.basin_ids[basin_idx]
-            filepath: str = os.path.join(self.data_dir, 'timeseries',
-                                         f'CAMELS_GB_hydromet_timeseries_{basin}_19701001-20150930.csv')
-            df_list.append(process_df(pd.read_csv(filepath, usecols=timeseries_columns, parse_dates=[0],
-                                                  infer_datetime_format=True), basin_indexes, basin_idx))
-        # Single concat operation is very fast.
-        data = pd.concat(df_list, axis=0, ignore_index=True)
-        self.logger.info("Loaded basins into dataframe.")
         # List of feature names in `data` with a constant ordering independent of `data` or the features dict.
-        self.feature_names: List[str] = [col for col in CAMELS_FEATURES if col in list(data.columns)]
+        self.feature_names: List[str] = [col for col in SHIPSTON_FEATURES if col in list(data.columns)]
 
         # Extract input and output features from dataframe loaded above.
         x: np.ndarray = data[self.feature_names].to_numpy(dtype=self.precision)
-        y: np.ndarray = data['QObs(mm/d)'].to_numpy(dtype=self.precision)
+        y: np.ndarray = data['discharge_vol'].to_numpy(dtype=self.precision)
 
         # Normalise data, reshape for LSTM training and remove invalid samples.
         x = self._normalization(x, input=True)
-        x, y = _reshape_data(x, y, basin_indexes, self.seq_length, self.precision)
-        self.logger.info("Loaded basins into sequences in array")
+        x, y = _reshape_data(x, y, self.seq_length, self.precision)
         if self.train:
             # Normalise discharge - only needs to be done when training.
             y = self._normalization(y, input=False)
-
         # Convert arrays to torch tensors.
         return torch.from_numpy(x), torch.from_numpy(y)
 
@@ -168,11 +98,11 @@ class CamelsGB(BaseDataset):
             normalized features.
         """
         if input:
-            means = np.array([FEATURE_STATISTICS[feature][0] for feature in self.feature_names])
-            stds = np.array([FEATURE_STATISTICS[feature][1] for feature in self.feature_names])
+            means = np.array([SHIPSTON_STATISTICS[feature][0] for feature in self.feature_names])
+            stds = np.array([SHIPSTON_STATISTICS[feature][1] for feature in self.feature_names])
             data = (data - means) / stds
         else:
-            data = ((data - FEATURE_STATISTICS["QObs(mm/d)"][0]) / FEATURE_STATISTICS["QObs(mm/d)"][1])
+            data = ((data - SHIPSTON_STATISTICS["discharge_vol"][0]) / SHIPSTON_STATISTICS["discharge_vol"][1])
 
         return data
 
@@ -180,7 +110,7 @@ class CamelsGB(BaseDataset):
         """
         Rescale input/output features back to original size with mean/std.
 
-        The mean/std is calculated across all 671 basins.
+        The mean/std is again calculated across all 671 basins.
 
         Args:
             data (torch.Tensor): Array containing the features as a matrix.
@@ -191,13 +121,13 @@ class CamelsGB(BaseDataset):
             normalized features.
         """
         if input:
-            means = torch.tensor([FEATURE_STATISTICS[feature][0] for feature in self.feature_names],
+            means = torch.tensor([SHIPSTON_STATISTICS[feature][0] for feature in self.feature_names],
                                  dtype=torch.float32)
-            stds = torch.tensor([FEATURE_STATISTICS[feature][1] for feature in self.feature_names],
+            stds = torch.tensor([SHIPSTON_STATISTICS[feature][1] for feature in self.feature_names],
                                 dtype=torch.float32)
             data = data * stds + means
         else:
-            data = (data * FEATURE_STATISTICS["QObs(mm/d)"][1] + FEATURE_STATISTICS["QObs(mm/d)"][0])
+            data = (data * SHIPSTON_STATISTICS["discharge_vol"][1] + SHIPSTON_STATISTICS["discharge_vol"][0])
 
         return data
 
@@ -245,10 +175,10 @@ class CamelsGB(BaseDataset):
         in_nanregion = False
         # Calculate the start and end indices of all sections of nans in the discharge data.
         for row in range(df.index[0], df.index[-1] + 1):
-            if pd.isna(df['QObs(mm/d)'][row]) and not in_nanregion:
+            if pd.isna(df['discharge_vol'][row]) and not in_nanregion:
                 nan_regions.append(row)
                 in_nanregion = True
-            if not pd.isna(df['QObs(mm/d)'][row]) and in_nanregion:
+            if not pd.isna(df['discharge_vol'][row]) and in_nanregion:
                 nan_regions.append(row - 1)
                 in_nanregion = False
         # Remove the rows with nans.
@@ -261,8 +191,7 @@ class CamelsGB(BaseDataset):
 
 
 @njit
-def _reshape_data(x: np.ndarray, y: np.ndarray, basin_indexes: List[Tuple], seq_length: int,
-                  precision: Any) -> Tuple[np.ndarray, np.ndarray]:
+def _reshape_data(x: np.ndarray, y: np.ndarray, seq_length: int, precision: Any) -> Tuple[np.ndarray, np.ndarray]:
     """
     Reshape matrix data into sample shape for LSTM training.
 
@@ -275,8 +204,6 @@ def _reshape_data(x: np.ndarray, y: np.ndarray, basin_indexes: List[Tuple], seq_
         x (np.ndarray): Matrix containing input features column wise and time
         steps row wise.
         y (np.ndarray): Matrix containing the output feature.
-        basin_indexes (List): List of tuples containing the start and end
-        indexes for each basin, in the form (start_idx, end_idx).
         seq_length (int): Length of the time window of meteorological input
         provided for one time step of prediction.
         precision (int): Whether to load data as `np.float32` or `np.float16`.
@@ -288,23 +215,21 @@ def _reshape_data(x: np.ndarray, y: np.ndarray, basin_indexes: List[Tuple], seq_
         containing the expected output for each input sample.
     """
     _, num_features = x.shape
-    # Iterate once through all time steps for each basin to calculate number of valid data points.
+    # Iterate once through all time steps to calculate number of valid data points.
     # This is necessary because of short sections of NaNs in the discharge data.
     num_samples = 0
-    for (start_idx, end_idx) in basin_indexes:
-        for i in range(start_idx + seq_length - 1, end_idx):
-            if not np.isnan(y[i]):
-                num_samples += 1
+    for i in range(seq_length - 1, len(x)):
+        if not np.isnan(y[i]):
+            num_samples += 1
     # Assign empty numpy arrays with the correct size.
     x_new = np.empty((num_samples, seq_length, num_features), dtype=precision)
     y_new = np.empty((num_samples, 1), dtype=precision)
 
     num_samples = 0  # Start new counter so we can index the new arrays.
-    for (start_idx, end_idx) in basin_indexes:
-        for i in range(start_idx + seq_length - 1, end_idx):
-            if not np.isnan(y[i]):
-                x_new[num_samples, :, :num_features] = x[i - seq_length + 1:i + 1, :]
-                y_new[num_samples, :] = y[i]
-                num_samples += 1
+    for i in range(seq_length - 1, len(x)):
+        if not np.isnan(y[i]):
+            x_new[num_samples, :, :num_features] = x[i - seq_length + 1:i + 1, :]
+            y_new[num_samples, :] = y[i]
+            num_samples += 1
 
     return x_new, y_new

@@ -1,4 +1,26 @@
 {
+    "SHIPSTON_STATISTICS": {
+        "precipitation": [
+            1.914152,
+            3.956926
+        ],
+        "temperature": [
+            9.892808,
+            5.194839
+        ],
+        "humidity": [
+            6.453544,
+            2.041644
+        ],
+        "windspeed": [
+            3.858871,
+            1.696737
+        ],
+        "discharge_vol": [
+            1.514824,
+            2.499038
+        ]
+    },
     "FEATURE_STATISTICS": {
         "precipitation": [
             3.084257,
@@ -453,7 +475,13 @@
             127.938385
         ]
     },
-    "ALL_FEATURES": [
+    "SHIPSTON_FEATURES": [
+        "precipitation",
+        "temperature",
+        "humidity",
+        "windspeed"
+    ],
+    "CAMELS_FEATURES": [
         "precipitation",
         "pet",
         "temperature",

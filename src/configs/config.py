@@ -1,6 +1,5 @@
 import itertools
 import multiprocessing
-import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -53,7 +52,7 @@ class LSTMConfig(ModelConfig):
 
 @dataclass
 class DatasetConfig:
-    data_dir: Optional[str] = MISSING
+    type: str = MISSING
     features: Dict[str, Any] = MISSING
     num_features: int = MISSING
     seq_length: int = MISSING
@@ -86,13 +85,14 @@ cs.store(group="model", name="lstm", node=LSTMConfig)
 def validate_config(cfg: DictConfig) -> DictConfig:
     if cfg.run_name is None:
         raise TypeError("The `run_name` argument is mandatory.")
+    if cfg.dataset.type != 'shipston' and cfg.dataset.type != 'CAMELS-GB':
+        raise ValueError("The dataset type must be either 'shipston' or 'CAMELS-GB'.")
     if not set(cfg.dataset.features.keys()).issubset(set(constants.DATASET_KEYS)):
         raise ValueError(f"Keys in dataset.features must be from {constants.DATASET_KEYS}.")
-    if not set(itertools.chain(*cfg.dataset.features.values())).issubset(set(constants.ALL_FEATURES)):
+    feature_list = constants.SHIPSTON_FEATURES if cfg.dataset.type == 'shipston' else constants.CAMELS_FEATURES
+    if not set(itertools.chain(*cfg.dataset.features.values())).issubset(set(feature_list)):
         raise ValueError("Feature names must be valid and non-timeseries features must not contain NaNs.")
     cfg.dataset.num_features = sum([len(x) for x in cfg.dataset.features.values()])
-    # Set data_dir
-    cfg.dataset.data_dir = os.path.join(constants.SRC_PATH, 'data')
     # Validate train_test_split and date_range
     try:
         pd.Timestamp(cfg.dataset.train_test_split)
@@ -119,5 +119,5 @@ def validate_config(cfg: DictConfig) -> DictConfig:
 
     print('----------------- Options ---------------')
     print(OmegaConf.to_yaml(cfg))
-    print('----------------- End -------------------')
+    print('-----------------   End -----------------')
     return cfg

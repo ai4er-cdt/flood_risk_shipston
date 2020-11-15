@@ -10,9 +10,9 @@ import requests
 import torch
 import wandb
 from PIL import Image
-from src import constants
+from src.constants import *
 from src.models import LSTM_Model, calc_nse
-from src.preprocessing import CamelsGB
+from src.preprocessing import BaseDataset, CamelsGB, ShipstonDataset
 from torch.utils.data import DataLoader
 
 
@@ -54,7 +54,7 @@ class RunoffModel(pl.LightningModule):
         for (y, y_hat) in outputs:
             ys_list.append(y)
             preds_list.append(y_hat)
-        preds = self.test_set.rescale(torch.cat(preds_list), variable='output')
+        preds = self.test_set.rescale(torch.cat(preds_list), input=False)
         test_metric: float = calc_nse(torch.cat(ys_list).cpu().numpy(), preds.cpu().numpy())
         self.log(self.config.mode.test_metric, test_metric)
 
@@ -71,7 +71,7 @@ class RunoffModel(pl.LightningModule):
         for (y, y_hat) in outputs:
             ys_list.append(y)
             preds_list.append(y_hat)
-        preds = self.test_set.rescale(torch.cat(preds_list), variable='output').cpu()
+        preds = self.test_set.rescale(torch.cat(preds_list), input=False).cpu()
         self.ys = torch.cat(ys_list).cpu()
 
         if self.config.mode.mc_dropout:
@@ -100,60 +100,81 @@ class RunoffModel(pl.LightningModule):
         ax.set_xlabel("Day")
         ax.set_ylabel("Discharge (mm/d)")
         # Save plot to png file.
-        fig.savefig(os.path.join(constants.SAVE_PATH, self.config.run_name, f"{plot_name.lower()}.png"))
+        fig.savefig(os.path.join(SAVE_PATH, self.config.run_name, f"{plot_name.lower()}.png"))
         # Convert plot to PIL image and log to wandb.
         pil_image = Image.frombytes('RGB', fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
         self.logger.experiment.log({plot_name: wandb.Image(pil_image, mode='RGB', caption=plot_name)})
         self.printer.info("Plot generated and saved.")
 
     def prepare_data(self):
-        """Download CAMELS-GB from Dropbox link and extract it to `data_dir`."""
-        camels_dir: str = os.path.join(self.config.dataset.data_dir, 'CAMELS-GB')
-        # Check if data exists already.
-        if not os.path.exists(camels_dir) or not os.path.isdir(camels_dir) or not os.listdir(camels_dir):
-            self.printer.info("Downloading data...")
-            write_path: str = os.path.join(self.config.dataset.data_dir, f"{constants.DATASET_ID}.zip")
-            # Download from Dropbox URL.
-            req = requests.get(constants.DATASET_URL, stream=True)
-            with open(write_path, 'wb') as file:
-                for chunk in req.iter_content(chunk_size=128):
-                    file.write(chunk)
-            # Extract zip file.
-            with zipfile.ZipFile(write_path, 'r') as zip_ref:
-                zip_ref.extractall(self.config.dataset.data_dir)
-            # Move contents of inner directory to CAMELS-GB directory.
-            source_dir: str = os.path.join(self.config.dataset.data_dir, constants.DATASET_ID, 'data')
-            os.mkdir(camels_dir)
-            file_names: List[str] = os.listdir(source_dir)
-            for file_name in file_names:
-                shutil.move(os.path.join(source_dir, file_name), os.path.join(camels_dir, file_name))
-            # Delete zip file and waste folder.
-            shutil.rmtree(os.path.join(self.config.dataset.data_dir, constants.DATASET_ID))
-            os.remove(write_path)
-            self.printer.info("Data downloaded.")
+        """Download the relevant dataset from a Dropbox link and extract it."""
+        if self.config.dataset.type == 'shipston':
+            if not os.path.exists(os.path.join(DATA_PATH, SHIPSTON_ID)):
+                self.printer.info("Downloading data...")
+                req = requests.get(SHIPSTON_URL, allow_redirects=True)
+                open(os.path.join(DATA_PATH, SHIPSTON_ID), 'wb').write(req.content)
+                self.printer.info("Data downloaded.")
+        else:
+            camels_dir: str = os.path.join(DATA_PATH, 'CAMELS-GB')
+            # Check if data exists already.
+            if not os.path.exists(camels_dir) or not os.path.isdir(camels_dir) or not os.listdir(camels_dir):
+                self.printer.info("Downloading data...")
+                write_path: str = os.path.join(DATA_PATH, f"{CAMELS_ID}.zip")
+                # Download from Dropbox URL.
+                req = requests.get(CAMELS_URL, stream=True)
+                with open(write_path, 'wb') as file:
+                    for chunk in req.iter_content(chunk_size=128):
+                        file.write(chunk)
+                # Extract zip file.
+                with zipfile.ZipFile(write_path, 'r') as zip_ref:
+                    zip_ref.extractall(DATA_PATH)
+                # Move contents of inner directory to CAMELS-GB directory.
+                source_dir: str = os.path.join(DATA_PATH, CAMELS_ID, 'data')
+                os.mkdir(camels_dir)
+                file_names: List[str] = os.listdir(source_dir)
+                for file_name in file_names:
+                    shutil.move(os.path.join(source_dir, file_name), os.path.join(camels_dir, file_name))
+                # Delete zip file and waste folder.
+                shutil.rmtree(os.path.join(DATA_PATH, CAMELS_ID))
+                os.remove(write_path)
+                self.printer.info("Data downloaded.")
 
     def setup(self, stage: str):
         # `stage` can be either "fit" or "test".
         if stage == 'fit':
             self.printer.info("Loading training set.")
-            self.train_set = CamelsGB(data_dir=self.config.dataset.data_dir,
-                                      features=self.config.dataset.features,
-                                      basins_frac=self.config.dataset.basins_frac,
-                                      dates=self.config.mode.date_range,
-                                      train=True,
-                                      seq_length=self.config.dataset.seq_length,
-                                      train_test_split=self.config.dataset.train_test_split,
-                                      precision=self.config.precision)
+            if self.config.dataset.type == 'shipston':
+                self.train_set: BaseDataset = ShipstonDataset(features=self.config.dataset.features,
+                                                              dates=self.config.mode.date_range,
+                                                              train=True,
+                                                              seq_length=self.config.dataset.seq_length,
+                                                              train_test_split=self.config.dataset.train_test_split,
+                                                              precision=self.config.precision)
+            elif self.config.dataset.type == 'CAMELS-GB':
+                self.train_set = CamelsGB(features=self.config.dataset.features,
+                                          basins_frac=self.config.dataset.basins_frac,
+                                          dates=self.config.mode.date_range,
+                                          train=True,
+                                          seq_length=self.config.dataset.seq_length,
+                                          train_test_split=self.config.dataset.train_test_split,
+                                          precision=self.config.precision)
             self.printer.info("Loaded training set.")
         self.printer.info("Loading test set.")
-        self.test_set = CamelsGB(data_dir=self.config.dataset.data_dir,
-                                 features=self.config.dataset.features,
-                                 basins_frac=self.config.dataset.basins_frac,
-                                 dates=self.config.mode.date_range,
-                                 train=False,
-                                 seq_length=self.config.dataset.seq_length,
-                                 train_test_split=self.config.dataset.train_test_split,
-                                 precision=self.config.precision)
+        if self.config.dataset.type == 'shipston':
+            self.test_set: BaseDataset = ShipstonDataset(features=self.config.dataset.features,
+                                                         dates=self.config.mode.date_range,
+                                                         train=False,
+                                                         seq_length=self.config.dataset.seq_length,
+                                                         train_test_split=self.config.dataset.train_test_split,
+                                                         precision=self.config.precision)
+        else:
+            self.test_set = CamelsGB(features=self.config.dataset.features,
+                                     basins_frac=self.config.dataset.basins_frac,
+                                     dates=self.config.mode.date_range,
+                                     train=False,
+                                     seq_length=self.config.dataset.seq_length,
+                                     train_test_split=self.config.dataset.train_test_split,
+                                     precision=self.config.precision)
         self.printer.info("Loaded test set.")
 
     def train_dataloader(self):
