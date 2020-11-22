@@ -5,6 +5,7 @@ import zipfile
 from typing import List
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pytorch_lightning as pl
 import requests
 import torch
@@ -90,6 +91,8 @@ class RunoffModel(pl.LightningModule):
         # Play around with alpha here to see uncertainty better!
         ax.plot(x_axis, self.ys, label="observation", alpha=0.8)
         ax.plot(x_axis, self.preds, label="prediction")
+        np.savetxt("obs.csv", self.ys.numpy(), delimiter=",")
+        np.savetxt("preds.csv", self.preds.numpy(), delimiter=",")
         if self.config.mode.mc_dropout:
             preds_var, preds_mean = torch.var_mean(self.preds, dim=1)
             ax.fill_between(x_axis, preds_mean - torch.sqrt(preds_var), preds_mean +
