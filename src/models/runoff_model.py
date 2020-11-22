@@ -75,10 +75,13 @@ class RunoffModel(pl.LightningModule):
         self.ys = torch.cat(ys_list).cpu()
 
         if self.config.mode.mc_dropout:
+            if not hasattr(self, 'preds'):
+                self.test_metric: float = calc_nse(self.ys.numpy(), preds.numpy())
+                self.log(f"Test {self.config.mode.test_metric}", self.test_metric)
             self.preds: torch.Tensor = torch.cat((self.preds, preds), dim=1) if hasattr(self, 'preds') else preds
         else:
             self.preds = preds
-            self.test_metric: float = calc_nse(self.ys.numpy(), self.preds.numpy())
+            self.test_metric = calc_nse(self.ys.numpy(), self.preds.numpy())
             self.log(f"Test {self.config.mode.test_metric}", self.test_metric)
 
     def plot_results(self) -> None:
