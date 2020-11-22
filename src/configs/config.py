@@ -45,7 +45,6 @@ class ModelConfig:
 
 @dataclass
 class LSTMConfig(ModelConfig):
-    bidirectional: bool = MISSING
     hidden_units: int = MISSING
     dropout_rate: float = MISSING
 
@@ -57,9 +56,18 @@ class DatasetConfig:
     num_features: int = MISSING
     seq_length: int = MISSING
     train_test_split: str = MISSING
-    basins_frac: float = MISSING
     shuffle: bool = MISSING
     num_workers: int = MISSING
+
+
+@dataclass
+class CamelsConfig(DatasetConfig):
+    basins_frac: float = MISSING
+
+
+@dataclass
+class ShipstonConfig(DatasetConfig):
+    pass
 
 
 @dataclass
@@ -80,13 +88,15 @@ cs.store(name="config", node=ConfigClass)
 cs.store(group="mode", name="train", node=TrainConfig)
 cs.store(group="mode", name="test", node=TestConfig)
 cs.store(group="model", name="lstm", node=LSTMConfig)
+cs.store(group="dataset", name="shipston", node=ShipstonConfig)
+cs.store(group="dataset", name="camels-gb", node=CamelsConfig)
 
 
 def validate_config(cfg: DictConfig) -> DictConfig:
     if cfg.run_name is None:
         raise TypeError("The `run_name` argument is mandatory.")
-    if cfg.dataset.type != 'shipston' and cfg.dataset.type != 'CAMELS-GB':
-        raise ValueError("The dataset type must be either 'shipston' or 'CAMELS-GB'.")
+    if cfg.dataset.type != 'shipston' and cfg.dataset.type != 'camels-gb':
+        raise ValueError("The dataset type must be either 'shipston' or 'camels-gb'.")
     if not set(cfg.dataset.features.keys()).issubset(set(constants.DATASET_KEYS)):
         raise ValueError(f"Keys in dataset.features must be from {constants.DATASET_KEYS}.")
     feature_list = constants.SHIPSTON_FEATURES if cfg.dataset.type == 'shipston' else constants.CAMELS_FEATURES
@@ -103,7 +113,7 @@ def validate_config(cfg: DictConfig) -> DictConfig:
     if cfg.dataset.seq_length <= 0:
         raise ValueError("The parameter `dataset.seq_length` must be > 0.")
     # Validate basins_frac
-    if not 0.0 <= cfg.dataset.basins_frac <= 1.0:
+    if cfg.dataset.type == 'camels-gb' and not 0.0 <= cfg.dataset.basins_frac <= 1.0:
         raise ValueError(f"The basins fraction {cfg.dataset.basins_frac} must be in the range [0, 1].")
     if cfg.precision != 16 and cfg.precision != 32:
         raise ValueError(f"The precision {cfg.precision} must be either 16 or 32.")

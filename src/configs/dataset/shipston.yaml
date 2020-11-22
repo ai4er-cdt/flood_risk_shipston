@@ -1,0 +1,7 @@
+# @package _group_
+type: 'shipston'
+features: {'timeseries' : ['precipitation', 'temperature']}
+seq_length: 365 # Number of previous days of meterological data to use for one prediction.
+train_test_split: '2010' # Split date to separate the data into the train and test sets.
+shuffle: True # Whether to shuffle the training dataset randomly.
+num_workers: 8 # Number of subprocesses to use for data loading.

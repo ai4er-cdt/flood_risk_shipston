@@ -58,13 +58,14 @@ class ShipstonDataset(BaseDataset):
         return self.x[idx], self.y[idx]
 
     def _load_data(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        data = pd.read_csv(os.path.join(DATA_PATH, 'shipstonv1.csv'),
-                           parse_dates=[0], infer_datetime_format=True)
+        timeseries_columns: List[str] = ['date'] + self.features + ['discharge_vol']
+        data = pd.read_csv(os.path.join(DATA_PATH, SHIPSTON_ID), usecols=timeseries_columns,
+                           parse_dates=[0], infer_datetime_format=True, dtype=np.float32)
         # Crop the date range as much as possible.
         if len(self.dates) == 0 and self.train:
             self.dates = [data.date[0], self.train_test_split]
         elif len(self.dates) == 0 and not self.train:
-            self.dates = [self.train_test_split, data.date.iloc[-1]]
+            self.dates = [self.train_test_split, '2017']
         data = self._crop_dates(data, start_date=self.dates[0], end_date=self.dates[1])
         # Remove as many contiguous regions of NaNs as possible.
         data = self._remove_nan_regions(data)

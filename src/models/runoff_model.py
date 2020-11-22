@@ -11,7 +11,7 @@ import torch
 import wandb
 from PIL import Image
 from src.constants import *
-from src.models import LSTM_Model, calc_nse
+from src.models import LSTMModel, calc_nse
 from src.preprocessing import BaseDataset, CamelsGB, ShipstonDataset
 from torch.utils.data import DataLoader
 
@@ -22,7 +22,7 @@ class RunoffModel(pl.LightningModule):
         self.save_hyperparameters(config)
         self.config = config
         # Long term - think about using hydra.utils.instantiate here.
-        self.model = LSTM_Model(hidden_units=self.config.model.hidden_units,
+        self.model = LSTMModel(hidden_units=self.config.model.hidden_units,
                                 num_features=self.config.dataset.num_features,
                                 dropout_rate=self.config.model.dropout_rate,
                                 num_layers=self.config.model.num_layers)

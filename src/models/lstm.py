@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 
-class LSTM_Model(nn.Module):
+class LSTMModel(nn.Module):
     """PyTorch `Module` class for an LSTM model."""
 
     def __init__(self, hidden_units: int, num_features: int, dropout_rate: float = 0.0, num_layers: int = 1) -> None:
@@ -16,7 +16,7 @@ class LSTM_Model(nn.Module):
             connected layer. Defaults to 0.0.
             num_layers (int, optional): Number of LSTM layers. Defaults to 1.
         """
-        super(LSTM_Model, self).__init__()
+        super(LSTMModel, self).__init__()
         self.hidden_units = hidden_units
         self.dropout_rate = dropout_rate
         self.num_layers = num_layers
