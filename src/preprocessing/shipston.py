@@ -65,10 +65,12 @@ class ShipstonDataset(BaseDataset):
         if len(self.dates) == 0 and self.train:
             self.dates = [data.date[0], self.train_test_split]
         elif len(self.dates) == 0 and not self.train:
-            self.dates = [self.train_test_split, '2020']
+            self.dates = [self.train_test_split, '2019-12-31']
         data = self._crop_dates(data, start_date=self.dates[0], end_date=self.dates[1])
         # Remove as many contiguous regions of NaNs as possible.
         data = self._remove_nan_regions(data)
+        print(data.head())
+        print(data.tail())
 
         # List of feature names in `data` with a constant ordering independent of `data` or the features dict.
         self.feature_names: List[str] = [col for col in SHIPSTON_FEATURES if col in list(data.columns)]
