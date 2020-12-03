@@ -1,6 +1,7 @@
 """
 Script assumes that the data is in the src/data directory.
 """
+import os
 import numpy as np
 from scipy.signal import find_peaks
 import pandas as pd
@@ -8,9 +9,10 @@ import time
 import matplotlib.pyplot as plt
 from functools import wraps
 
-def get_wiski_data(resolution='60min', field='stage', fill_in_value=np.nan):
 
-    prefix = '../data/'
+def get_wiski_data(prefix, resolution='60min', field='stage', fill_in_value=np.nan):
+
+    print('get wiski data script starting (takes a long time)')
 
     file_name = {'60min': prefix + 'Shipston Wiski data - 60 min.xlsx',
                  '15min': prefix +'Shipston Wiski data - 15 min.xlsx'}
@@ -49,9 +51,14 @@ def get_peaks_above_threshold(df, key, threshold):
 
 
 if __name__ == "__main__":
+    
+    this_path = os.path.realpath(__file__)
+    PROJECT_PATH = os.path.dirname(os.path.dirname(this_path))
+    data_loc = os.path.join(PROJECT_PATH, "data") + '/'
 
-    threshold = 2.5 # metres
-    stage60_filtered = get_wiski_data()
+    threshold = 2.7 # metres
+    stage60_filtered = get_wiski_data(data_loc)
     df = get_peaks_above_threshold(stage60_filtered,
                                    'Stage [m]', threshold)
-    df.to_excel('../data/stage_60min_'+ str(threshold) +'m_threshold.xlsx')
+    df.to_excel(data_loc + 'stage_60min_'
+                + str(threshold) +'m_threshold.xlsx')
