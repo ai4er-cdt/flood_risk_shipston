@@ -13,34 +13,34 @@ class FilterNet(nn.Module):
     def __init__(self, num_features):
         super().__init__()
         window = 24
-        self.c1a = conv_layer(window=window // 2, in_channels=1, ks=1, dilation=1)
+        self.c1a = conv_layer(window=window // 2, in_channels=num_features, ks=1, dilation=1)
+        self.c2a = conv_layer(window=window // 2, in_channels=num_features, ks=2, dilation=1)
+        self.c3a = conv_layer(window=window // 2, in_channels=num_features, ks=3, dilation=1)
+        self.c4a = conv_layer(window=window // 2, in_channels=num_features, ks=4, dilation=1)
+        self.c5a = conv_layer(window=window // 2, in_channels=num_features, ks=5, dilation=1)
+        self.c6a = conv_layer(window=window // 2, in_channels=num_features, ks=6, dilation=1)
         self.c1b = conv_layer(window=window // 4, ks=1, dilation=2)
-        self.c2a = conv_layer(window=window // 2, ks=2, dilation=1)
         self.c2b = conv_layer(window=window // 4, ks=2, dilation=2)
-        self.c3a = conv_layer(window=window // 2, ks=3, dilation=1)
         self.c3b = conv_layer(window=window // 4, ks=3, dilation=2)
-        self.c4a = conv_layer(window=window // 2, ks=4, dilation=1)
         self.c4b = conv_layer(window=window // 4, ks=4, dilation=2)
-        self.c5a = conv_layer(window=window // 2, ks=5, dilation=1)
         self.c5b = conv_layer(window=window // 4, ks=5, dilation=2)
-        self.c6a = conv_layer(window=window // 2, ks=6, dilation=1)
         self.c6b = conv_layer(window=window // 4, ks=6, dilation=2)
 
         self.fc1 = nn.Linear(256, 128, bias=False)
         self.fc2 = nn.Linear(128, 1, bias=False)
 
-    def forward(self, x_window):
-        self.f1a = self.c1a(x_window)
+    def forward(self, x):
+        self.f1a = self.c1a(x)
+        self.f2a = self.c2a(x)
+        self.f3a = self.c3a(x)
+        self.f4a = self.c4a(x)
+        self.f5a = self.c5a(x)
+        self.f6a = self.c6a(x)
         self.f1b = self.c1b(self.f1a)
-        self.f2a = self.c2a(x_window)
         self.f2b = self.c2b(self.f2a)
-        self.f3a = self.c3a(x_window)
         self.f3b = self.c3b(self.f3a)
-        self.f4a = self.c4a(x_window)
         self.f4b = self.c4b(self.f4a)
-        self.f5a = self.c5a(x_window)
         self.f5b = self.c5b(self.f5a)
-        self.f6a = self.c6a(x_window)
         self.f6b = self.c6b(self.f6a)
         x = torch.cat([self.f1a, self.f1b, self.f2a, self.f2b,
                               self.f3a, self.f3b, self.f4a, self.f4b,
