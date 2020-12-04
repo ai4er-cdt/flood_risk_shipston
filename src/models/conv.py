@@ -29,7 +29,7 @@ class FilterNet(nn.Module):
         self.fc1 = nn.Linear(256, 128, bias=False)
         self.fc2 = nn.Linear(128, 1, bias=False)
 
-    def forward(self, x_window, x_cat, x_cont):
+    def forward(self, x_window):
         self.f1a = self.c1a(x_window)
         self.f1b = self.c1b(self.f1a)
         self.f2a = self.c2a(x_window)
