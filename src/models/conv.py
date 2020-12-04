@@ -26,8 +26,8 @@ class FilterNet(nn.Module):
         self.c5b = conv_layer(window=window // 4, ks=5, dilation=2)
         self.c6b = conv_layer(window=window // 4, ks=6, dilation=2)
 
-        self.fc1 = nn.Linear(256, 128, bias=False)
-        self.fc2 = nn.Linear(128, 1, bias=False)
+        self.fc1 = nn.Linear(108, 1, bias=False)
+        # self.fc2 = nn.Linear(128, 1, bias=False)
 
     def forward(self, x):
         x = x.permute(0, 2, 1)
@@ -50,7 +50,7 @@ class FilterNet(nn.Module):
         # x = x.unsqueeze(1)
         x = x.contiguous().view(x.size(0), -1)
         x = self.fc1(x)
-        x = self.fc2(x)
+        # x = self.fc2(x)
         return x
 
 
