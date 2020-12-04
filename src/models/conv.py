@@ -30,6 +30,7 @@ class FilterNet(nn.Module):
         self.fc2 = nn.Linear(128, 1, bias=False)
 
     def forward(self, x):
+        x = x.permute(0, 2, 1)
         self.f1a = self.c1a(x)
         self.f2a = self.c2a(x)
         self.f3a = self.c3a(x)
