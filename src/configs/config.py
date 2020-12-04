@@ -50,6 +50,11 @@ class LSTMConfig(ModelConfig):
 
 
 @dataclass
+class ConvConfig(ModelConfig):
+    pass
+
+
+@dataclass
 class DatasetConfig:
     type: str = MISSING
     features: Dict[str, Any] = MISSING
@@ -88,6 +93,7 @@ cs.store(name="config", node=ConfigClass)
 cs.store(group="mode", name="train", node=TrainConfig)
 cs.store(group="mode", name="test", node=TestConfig)
 cs.store(group="model", name="lstm", node=LSTMConfig)
+cs.store(group="model", name="conv", node=ConvConfig)
 cs.store(group="dataset", name="shipston", node=ShipstonConfig)
 cs.store(group="dataset", name="camels-gb", node=CamelsConfig)
 

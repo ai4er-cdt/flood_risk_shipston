@@ -57,22 +57,22 @@ def train_model(config):
                       log_every_n_steps=config.mode.log_steps, val_check_interval=config.mode.val_interval)
 
     # Train model
-    #trainer.fit(runoff_model)
+    trainer.fit(runoff_model)
 
     # Load best checkpoint
-    runoff_model = RunoffModel.load_from_checkpoint(os.path.join(DATA_PATH, 'LSTM.pt'))
+    runoff_model = RunoffModel.load_from_checkpoint(ckpt.best_model_path)
 
     # Save weights from checkpoint
-    #statedict_path: str = os.path.join(run_dir, 'saved_models', f"{config.model.type}.pt")
-    #os.makedirs(os.path.dirname(statedict_path), exist_ok=True)
-    #torch.save(runoff_model.model.state_dict(), statedict_path)
+    statedict_path: str = os.path.join(run_dir, 'saved_models', f"{config.model.type}.pt")
+    os.makedirs(os.path.dirname(statedict_path), exist_ok=True)
+    torch.save(runoff_model.model.state_dict(), statedict_path)
 
     # Test and get Monte Carlo Dropout uncertainties.
-    #if config.mode.mc_dropout:
-    #    for _ in range(config.mode.mc_dropout_iters):
-    #        trainer.test(runoff_model)
-    #    runoff_model.plot_results()
-    #    config.mode.mc_dropout = False
+    if config.mode.mc_dropout:
+        for _ in range(config.mode.mc_dropout_iters):
+            trainer.test(runoff_model)
+        runoff_model.plot_results()
+        config.mode.mc_dropout = False
 
     trainer.test(runoff_model)
     runoff_model.plot_results()
