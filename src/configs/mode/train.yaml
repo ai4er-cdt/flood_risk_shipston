@@ -9,7 +9,7 @@ test_metric: NSE
 checkpoint_freq: 1 # How many epochs we should train for before checkpointing the model.
 val_interval: 0.25 # If this is a float, it is the proportion of the training set that should go between validation epochs.
 # If this is an int, it denotes the number of batches in between validation epochs.
-log_steps: 50 # How many gradient updates between each log point.
+log_steps: 20 # How many gradient updates between each log point.
 fine_tune: False # Whether or not we are fine-tuning on Shipston data.
 date_range: [] # Custom date range for the train dataset, as a list of two strings.
 mc_dropout: False # Whether or not to use MC Dropout to get output uncertainty.

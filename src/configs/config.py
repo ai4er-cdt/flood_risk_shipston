@@ -39,12 +39,12 @@ class TestConfig(ModeConfig):
 
 @dataclass
 class ModelConfig:
-    num_layers: int = MISSING
     type: str = MISSING
 
 
 @dataclass
 class LSTMConfig(ModelConfig):
+    num_layers: int = MISSING
     hidden_units: int = MISSING
     dropout_rate: float = MISSING
 
