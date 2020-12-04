@@ -2,6 +2,57 @@ import torch
 import torch.nn as nn
 
 
+def conv_layer(window, in_channels=1, ks=3, dilation=1):
+    return nn.Sequential(
+        nn.Conv1d(in_channels, 1, kernel_size=ks, bias=False, dilation=dilation),
+        nn.AdaptiveAvgPool1d(window),
+        nn.LeakyReLU(negative_slope=0.1, inplace=True))
+
+
+class FilterNet(nn.Module):
+    def __init__(self, num_features):
+        super().__init__()
+        window = 24
+        self.c1a = conv_layer(window=window // 2, in_channels=1, ks=1, dilation=1)
+        self.c1b = conv_layer(window=window // 4, ks=1, dilation=2)
+        self.c2a = conv_layer(window=window // 2, ks=2, dilation=1)
+        self.c2b = conv_layer(window=window // 4, ks=2, dilation=2)
+        self.c3a = conv_layer(window=window // 2, ks=3, dilation=1)
+        self.c3b = conv_layer(window=window // 4, ks=3, dilation=2)
+        self.c4a = conv_layer(window=window // 2, ks=4, dilation=1)
+        self.c4b = conv_layer(window=window // 4, ks=4, dilation=2)
+        self.c5a = conv_layer(window=window // 2, ks=5, dilation=1)
+        self.c5b = conv_layer(window=window // 4, ks=5, dilation=2)
+        self.c6a = conv_layer(window=window // 2, ks=6, dilation=1)
+        self.c6b = conv_layer(window=window // 4, ks=6, dilation=2)
+
+        self.fc1 = nn.Linear(256, 128, bias=False)
+        self.fc2 = nn.Linear(128, 1, bias=False)
+
+    def forward(self, x_window, x_cat, x_cont):
+        self.f1a = self.c1a(x_window)
+        self.f1b = self.c1b(self.f1a)
+        self.f2a = self.c2a(x_window)
+        self.f2b = self.c2b(self.f2a)
+        self.f3a = self.c3a(x_window)
+        self.f3b = self.c3b(self.f3a)
+        self.f4a = self.c4a(x_window)
+        self.f4b = self.c4b(self.f4a)
+        self.f5a = self.c5a(x_window)
+        self.f5b = self.c5b(self.f5a)
+        self.f6a = self.c6a(x_window)
+        self.f6b = self.c6b(self.f6a)
+        x = torch.cat([self.f1a, self.f1b, self.f2a, self.f2b,
+                              self.f3a, self.f3b, self.f4a, self.f4b,
+                              self.f5a, self.f5b, self.f6a, self.f6b, ], 2)
+
+        # x = x.unsqueeze(1)
+        x = x.contiguous().view(x.size(0), -1)
+        x = self.fc1(x)
+        x = self.fc2(x)
+        return x
+
+
 class Wave_Block(nn.Module):
 
     def __init__(self, in_channels, out_channels, dilation_rates, kernel_size):
@@ -80,7 +131,8 @@ class Conv1DModel(nn.Module):
         self.pool = nn.MaxPool1d(2)
 
         self.dropout = nn.Dropout(p=self.dropout_rate)
-        self.fc1 = nn.Linear(in_features=128, out_features=1)
+        self.fc1 = nn.Linear(in_features=11584, out_features=128)
+        self.fc2 = nn.Linear(in_features=128, out_features=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -98,5 +150,6 @@ class Conv1DModel(nn.Module):
         x = self.conv2(x)
 
         x = self.pool(x)
-        x = self.fc1(x)
+        x = self.fc1(x.contiguous().view(x.size(0), -1))
+        x = self.fc2(x)
         return x
