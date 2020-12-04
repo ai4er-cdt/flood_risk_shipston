@@ -60,7 +60,7 @@ class WaveNet(nn.Module):
 class Conv1DModel(nn.Module):
     """PyTorch `Module` class for an LSTM model."""
 
-    def __init__(self, hidden_units: int, num_features: int, dropout_rate: float = 0.0, num_layers: int = 1) -> None:
+    def __init__(self, num_features: int, dropout_rate: float = 0.0) -> None:
         """
         Initialise model.
 
@@ -72,15 +72,15 @@ class Conv1DModel(nn.Module):
             num_layers (int, optional): Number of LSTM layers. Defaults to 1.
         """
         super(Conv1DModel, self).__init__()
-        self.hidden_units = hidden_units
         self.dropout_rate = dropout_rate
-        self.num_layers = num_layers
         self.num_features = num_features
 
-        self.conv = nn.Conv1d(in_channels=num_features, out_channels=1, kernel_size=3)
+        self.conv1 = nn.Conv1d(in_channels=self.num_features, out_channels=16, kernel_size=1)
+        self.conv2 = nn.Conv1d(in_channels=16, out_channels=64, kernel_size=3)
+        self.pool = nn.MaxPool1d(2)
 
         self.dropout = nn.Dropout(p=self.dropout_rate)
-        self.fc = nn.Linear(in_features=self.hidden_units, out_features=1)
+        self.fc1 = nn.Linear(in_features=128, out_features=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -93,6 +93,10 @@ class Conv1DModel(nn.Module):
         Returns:
             torch.Tensor: Tensor containing the network predictions
         """
-        x = torch.transpose(x, 1, 2)
-        output = self.conv(x)
-        return output
+        x = x.permute(0, 2, 1)
+        x = self.conv1(x)
+        x = self.conv2(x)
+
+        x = self.pool(x)
+        x = self.fc1(x)
+        return x

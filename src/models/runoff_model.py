@@ -12,7 +12,7 @@ import torch
 import wandb
 from PIL import Image
 from src.constants import *
-from src.models import LSTMModel, WaveNet, calc_nse
+from src.models import Conv1DModel, LSTMModel, WaveNet, calc_nse
 from src.preprocessing import BaseDataset, CamelsGB, ShipstonDataset
 from torch.utils.data import DataLoader
 
@@ -23,7 +23,7 @@ class RunoffModel(pl.LightningModule):
         self.save_hyperparameters(config)
         self.config = config
         if self.config.model.type == "WaveNet":
-            self.model: torch.nn.Module = WaveNet(num_features=self.config.dataset.num_features)
+            self.model: torch.nn.Module = Conv1DModel(num_features=self.config.dataset.num_features)
         elif self.config.model.type == "LSTM":
             self.model = LSTMModel(hidden_units=self.config.model.hidden_units,
                                    num_features=self.config.dataset.num_features,
