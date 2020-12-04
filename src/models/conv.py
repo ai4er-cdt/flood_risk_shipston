@@ -39,7 +39,9 @@ class WaveNet(nn.Module):
         self.wave_block2 = Wave_Block(16, 32, 8, kernel_size)
         self.wave_block3 = Wave_Block(32, 64, 4, kernel_size)
         self.wave_block4 = Wave_Block(64, 128, 1, kernel_size)
-        self.fc = nn.Linear(128, 1)
+        self.fc1 = nn.Linear(11648, 128)
+        self.fc2 = nn.Linear(128, 1)
+        self.pool = nn.MaxPool1d(4)
 
     def forward(self, x):
         x = x.permute(0, 2, 1)
@@ -49,8 +51,9 @@ class WaveNet(nn.Module):
         x = self.wave_block3(x)
 
         x = self.wave_block4(x)
-        x = x.permute(0, 2, 1)
-        x = self.fc(x)
+        x = self.pool(x)
+        x = self.fc1(x.contiguous().view(x.size(0), -1))
+        x = self.fc2(x)
         return x
 
 
