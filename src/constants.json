@@ -479,8 +479,7 @@
         "precipitation",
         "temperature",
         "humidity",
-        "windspeed",
-        "discharge_vol"
+        "windspeed"
     ],
     "CAMELS_FEATURES": [
         "precipitation",

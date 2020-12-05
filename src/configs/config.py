@@ -103,6 +103,8 @@ def validate_config(cfg: DictConfig) -> DictConfig:
         raise TypeError("The `run_name` argument is mandatory.")
     if cfg.dataset.type != 'shipston' and cfg.dataset.type != 'camels-gb':
         raise ValueError("The dataset type must be either 'shipston' or 'camels-gb'.")
+    if cfg.model.type != 'LSTM' and cfg.model.type != 'conv':
+        raise ValueError("The model type must be either 'LSTM' or 'conv'.")
     if not set(cfg.dataset.features.keys()).issubset(set(constants.DATASET_KEYS)):
         raise ValueError(f"Keys in dataset.features must be from {constants.DATASET_KEYS}.")
     feature_list = constants.SHIPSTON_FEATURES if cfg.dataset.type == 'shipston' else constants.CAMELS_FEATURES
