@@ -51,7 +51,7 @@ class LSTMModel(nn.Module):
 
 class LSTNet(nn.Module):
 
-    def __init__(self, num_features=3, dropout_rate=0.2):
+    def __init__(self, num_features=2, dropout_rate=0.2):
         super(LSTNet, self).__init__()
         self.num_features = num_features
         self.conv1_out_channels = 32
@@ -66,9 +66,8 @@ class LSTNet(nn.Module):
         self.conv1 = nn.Conv2d(1, self.conv1_out_channels,
                                kernel_size=(self.conv1_kernel_height, self.num_features))
         self.recc1 = nn.GRU(self.conv1_out_channels, self.recc1_out_channels, batch_first=True)
-        self.skip_reccs = {}
-        for i in range(len(self.skip_steps)):
-            self.skip_reccs[i] = nn.GRU(self.conv1_out_channels, self.skip_reccs_out_channels[i], batch_first=True)
+        self.skip_reccs1 = nn.GRU(self.conv1_out_channels, self.skip_reccs_out_channels[0], batch_first=True)
+        self.skip_reccs2 = nn.GRU(self.conv1_out_channels, self.skip_reccs_out_channels[1], batch_first=True)
         self.output_in_features = self.recc1_out_channels + np.dot(self.skip_steps, self.skip_reccs_out_channels)
         self.output = nn.Linear(self.output_in_features, self.output_out_features)
         if self.ar_window_size > 0:
@@ -96,26 +95,45 @@ class LSTNet(nn.Module):
 
         # Skip Recurrent Layers
         shrinked_time_steps = C.size(2)
-        for i in range(len(self.skip_steps)):
-            skip_step = self.skip_steps[i]
-            skip_sequence_len = shrinked_time_steps // skip_step
-            # shrinked_time_steps shrinked further
-            # [batch_size, conv1_out_channels, shrinked_time_steps]
-            S = C[:, :, - skip_sequence_len * skip_step:]
-            # [batch_size, conv1_out_channels, skip_sequence_len, skip_step=num_skip_components]
-            S = S.view(S.size(0), S.size(1), skip_sequence_len, skip_step)
-            # note that num_skip_components = skip_step
-            # [batch_size, skip_step=num_skip_components, skip_sequence_len, conv1_out_channels]
-            S = S.permute(0, 3, 2, 1).contiguous()
-            # [batch_size*num_skip_components, skip_sequence_len, conv1_out_channels]
-            S = S.view(S.size(0) * S.size(1), S.size(2), S.size(3))
-            # [batch_size*num_skip_components, skip_sequence_len, skip_reccs_out_channels[i]]
-            out, hidden = self.skip_reccs[i](S)
-            S = out[:, -1, :]  # [batch_size*num_skip_components, skip_reccs_out_channels[i]]
-            # [batch_size, num_skip_components*skip_reccs_out_channels[i]]
-            S = S.view(batch_size, skip_step * S.size(1))
-            S = self.dropout(S)
-            R = torch.cat((R, S), 1)  # [batch_size, recc_out_channels + skip_reccs_out_channels * num_skip_components]
+        skip_step = 4
+        skip_sequence_len = shrinked_time_steps // skip_step
+        # shrinked_time_steps shrinked further
+        # [batch_size, conv1_out_channels, shrinked_time_steps]
+        S = C[:, :, - skip_sequence_len * skip_step:]
+        # [batch_size, conv1_out_channels, skip_sequence_len, skip_step=num_skip_components]
+        S = S.view(S.size(0), S.size(1), skip_sequence_len, skip_step)
+        # note that num_skip_components = skip_step
+        # [batch_size, skip_step=num_skip_components, skip_sequence_len, conv1_out_channels]
+        S = S.permute(0, 3, 2, 1).contiguous()
+        # [batch_size*num_skip_components, skip_sequence_len, conv1_out_channels]
+        S = S.view(S.size(0) * S.size(1), S.size(2), S.size(3))
+        # [batch_size*num_skip_components, skip_sequence_len, skip_reccs_out_channels[i]]
+        out, hidden = self.skip_reccs1(S)
+        S = out[:, -1, :]  # [batch_size*num_skip_components, skip_reccs_out_channels[i]]
+        # [batch_size, num_skip_components*skip_reccs_out_channels[i]]
+        S = S.view(batch_size, skip_step * S.size(1))
+        S = self.dropout(S)
+        R = torch.cat((R, S), 1)  # [batch_size, recc_out_channels + skip_reccs_out_channels * num_skip_components]
+
+        skip_step = 24
+        skip_sequence_len = shrinked_time_steps // skip_step
+        # shrinked_time_steps shrinked further
+        # [batch_size, conv1_out_channels, shrinked_time_steps]
+        S = C[:, :, - skip_sequence_len * skip_step:]
+        # [batch_size, conv1_out_channels, skip_sequence_len, skip_step=num_skip_components]
+        S = S.view(S.size(0), S.size(1), skip_sequence_len, skip_step)
+        # note that num_skip_components = skip_step
+        # [batch_size, skip_step=num_skip_components, skip_sequence_len, conv1_out_channels]
+        S = S.permute(0, 3, 2, 1).contiguous()
+        # [batch_size*num_skip_components, skip_sequence_len, conv1_out_channels]
+        S = S.view(S.size(0) * S.size(1), S.size(2), S.size(3))
+        # [batch_size*num_skip_components, skip_sequence_len, skip_reccs_out_channels[i]]
+        out, hidden = self.skip_reccs2(S)
+        S = out[:, -1, :]  # [batch_size*num_skip_components, skip_reccs_out_channels[i]]
+        # [batch_size, num_skip_components*skip_reccs_out_channels[i]]
+        S = S.view(batch_size, skip_step * S.size(1))
+        S = self.dropout(S)
+        R = torch.cat((R, S), 1)  # [batch_size, recc_out_channels + skip_reccs_out_channels * num_skip_components]
 
         # Output Layer
         output = F.relu(self.output(R))  # [batch_size, output_out_features=1]
