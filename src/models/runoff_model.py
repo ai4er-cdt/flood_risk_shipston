@@ -12,7 +12,7 @@ import torch
 import wandb
 from PIL import Image
 from src.constants import *
-from src.models import LSTMModel, LSTNet, WaveNet, calc_nse
+from src.models import LSTMModel, WaveNet, calc_nse
 from src.preprocessing import BaseDataset, CamelsGB, ShipstonDataset
 from torch.utils.data import DataLoader
 
@@ -25,13 +25,12 @@ class RunoffModel(pl.LightningModule):
         if self.config.model.type == "conv":
             self.model: torch.nn.Module = WaveNet(num_features=self.config.dataset.num_features)
         elif self.config.model.type == "LSTM":
-            #self.model = LSTMModel(hidden_units=self.config.model.hidden_units,
-            #                       num_features=self.config.dataset.num_features,
-            #                       dropout_rate=self.config.model.dropout_rate,
-            #                       num_layers=self.config.model.num_layers)
-            self.model = LSTNet(num_features=self.config.dataset.num_features,
-                                dropout_rate=self.config.model.dropout_rate)
-        self.loss = torch.nn.MSELoss()
+            self.model = LSTMModel(hidden_units=self.config.model.hidden_units,
+                                   num_features=self.config.dataset.num_features,
+                                   dropout_rate=self.config.model.dropout_rate,
+                                   num_layers=self.config.model.num_layers)
+        # self.loss = torch.nn.MSELoss()
+        self.loss = torch.nn.L1Loss()
         self.printer = logging.getLogger("lightning")
 
     def configure_optimizers(self):
