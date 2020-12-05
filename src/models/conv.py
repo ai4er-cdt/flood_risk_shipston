@@ -26,8 +26,7 @@ class FilterNet(nn.Module):
         self.c5b = conv_layer(window=window // 4, ks=5, dilation=2)
         self.c6b = conv_layer(window=window // 4, ks=6, dilation=2)
 
-        self.fc1 = nn.Linear(108, 1, bias=False)
-        # self.fc2 = nn.Linear(128, 1, bias=False)
+        self.fc = nn.Linear(108, 1, bias=False)
 
     def forward(self, x):
         x = x.permute(0, 2, 1)
@@ -47,10 +46,7 @@ class FilterNet(nn.Module):
                               self.f3a, self.f3b, self.f4a, self.f4b,
                               self.f5a, self.f5b, self.f6a, self.f6b, ], 2)
 
-        # x = x.unsqueeze(1)
-        x = x.contiguous().view(x.size(0), -1)
-        x = self.fc1(x)
-        # x = self.fc2(x)
+        x = self.fc(x.contiguous().view(x.size(0), -1))
         return x
 
 
@@ -110,19 +106,8 @@ class WaveNet(nn.Module):
 
 
 class Conv1DModel(nn.Module):
-    """PyTorch `Module` class for an LSTM model."""
 
     def __init__(self, num_features: int, dropout_rate: float = 0.0) -> None:
-        """
-        Initialise model.
-
-        Args:
-            hidden_units (int): Number of hidden units/LSTM cells per layer.
-            num_features (int): Number of features to input to the LSTM.
-            dropout_rate (float, optional): Dropout rate of the last fully
-            connected layer. Defaults to 0.0.
-            num_layers (int, optional): Number of LSTM layers. Defaults to 1.
-        """
         super(Conv1DModel, self).__init__()
         self.dropout_rate = dropout_rate
         self.num_features = num_features

@@ -63,9 +63,10 @@ class ShipstonDataset(BaseDataset):
                            parse_dates=[0], infer_datetime_format=True, dtype=np.float32)
         # Crop the date range as much as possible.
         if len(self.dates) == 0 and self.train:
-            self.dates = [data.date[0], self.train_test_split]
+            self.dates = [pd.Timestamp('1987-01-08'), self.train_test_split]
+            # self.dates = [data.date[0], self.train_test_split]
         elif len(self.dates) == 0 and not self.train:
-            self.dates = [self.train_test_split, '2019-12-31']
+            self.dates = [self.train_test_split, pd.Timestamp('2019-12-31')]
         data = self._crop_dates(data, start_date=self.dates[0], end_date=self.dates[1])
         # Remove as many contiguous regions of NaNs as possible.
         data = self._remove_nan_regions(data)
@@ -227,9 +228,9 @@ def _reshape_data(x: np.ndarray, y: np.ndarray, seq_length: int, precision: Any)
     y_new = np.empty((num_samples, 1), dtype=precision)
 
     num_samples = 0  # Start new counter so we can index the new arrays.
-    for i in range(seq_length - 1, len(x)):
+    for i in range(seq_length, len(x)):
         if not np.isnan(y[i]):
-            x_new[num_samples, :, :num_features] = x[i - seq_length + 1:i + 1, :]
+            x_new[num_samples, :, :num_features] = x[i - seq_length:i, :]
             y_new[num_samples, :] = y[i]
             num_samples += 1
 

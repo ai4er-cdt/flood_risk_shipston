@@ -12,7 +12,7 @@ import torch
 import wandb
 from PIL import Image
 from src.constants import *
-from src.models import FilterNet, LSTMModel, WaveNet, calc_nse
+from src.models import Conv1DModel, FilterNet, LSTMModel, WaveNet, calc_nse
 from src.preprocessing import BaseDataset, CamelsGB, ShipstonDataset
 from torch.utils.data import DataLoader
 
