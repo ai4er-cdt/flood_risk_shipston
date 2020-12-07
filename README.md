@@ -1,6 +1,55 @@
-# Shipston Flood Risk
+# Shipston Flood Risk Project
 
-## Runoff prediction model
+## 1. Project Summary
+#### Abstract 
+The purpose of this project is to investigate whether we can establish the effectiveness of __natural flood management (NFM)__ [interventions](https://www.therrc.co.uk/sites/default/files/files/Guidance_training/NFM_Roadshow/May_West_Midlands/23may_westmids_shipstonstour_philwraggtomlavers.pdf) undertaken in the British town of [Shipston-on-Stour](https://en.wikipedia.org/wiki/Shipston-on-Stour) during 2017 to 2020 from publicly available meteorological data and private data from the river gauge in Shipston. 
+
+Our analysis concludes that the available data (c.f. below for data sources) is not enough to confidently assess the effectiveness of 
+recent NFM interventions in Shipston with [state-of-the-art rainfall-runoff LSTM models](https://hess.copernicus.org/articles/22/6005/2018/). We attribute this to three main factors:
+
+- __Limited temporal resolution of available data__: All publicly available, past meteorological data from the [MetOffice](https://www.metoffice.gov.uk/) and [NRFA](https://nrfa.ceh.ac.uk/) is available on a daily basis. Yet, historical data shows that floods in Shipston depend on processes on hourly timescales. Flooding in Shipston strongly depends on whether the peak flow through Shipston exceeds 3.4m (the height of the Shipston bridge arches) at any given time, which typically happens only for a few hours of a day, even during floods. NFM interventions help to __flatten the curve__ and distribute the peak flow across a wider time range by slowing upstream flow rates. Since leakage through NFMs likely occurs on timescales of hours as well (many NFMs are leaky dams), 
+data with daily temporal resolution is likely not enough to confidently assess the effect of NFM interventions. In other words: NFM interventions might flatten the hourly flow without stronlgy affecting the daily total flow rate, such that the averaging over all hours in a day removes any information about the NFMs effectiveness.
+- __Limited data on extreme events__: The period of 1990 to 2020 contains less than 10 floods in Shipston (ca. 7 independent events if we define a flood by a threshold of 3.4m river stage). This means that while there is ample data on the __average__ discharge in the catchment, there is only little information about the __extreme values__ of the river discharge. We see this reflected in the results of our model, as the model's predictions agree well with the ground truth on average dischage values, but carry errors of about 20-30% for extreme events. 
+- __Limited meteorological data availability__: While temperature, rainfall and river discharge data for 1990 to 2020 were readily available, we could not obtain other important meteorological data (notably humidity, windspeed, potential evapotranspiration or solar irradiation) data for this period for the Shipston catchment. This data is relevant to include information about the physical process of evapotranspiration into the model and its absence means that
+our model predictions do not capture all relevant physical mechanisms. To assess the 
+
+While evapotranspiration plays a less important role at high latitudes 
+(Shipston: ~52° N), it is still a significant loss to drainage basins and should be taken into account from a hydrological point of view. 
+
+
+Nonetheless, we ... our model can be used once they have the required data ... 
+
+### 1.1 Approach
+Build an LSTM to model "what-if" scenario
+
+### 1.2 Results
+Rainfall-Runoff model 
+Insight that current data does not seem enough to assess effectiveness of NFM intervetions in this way.
+
+#### Results for Shipston-only models
+| Model | Validation NSE (2010-2016) |
+|--------|--------------------------------|
+| **Tuned Vanilla LSTM**** | **0.8175** |
+| [Vanilla 1D Conv model](https://github.com/ai4er-cdt/flood_risk_shipston/blob/425731e381bbc6ad004aed1fb13863bae0026cdb/src/models/conv.py#L108) | 0.4309 |
+| [WaveNet](https://arxiv.org/abs/1609.03499) | 0.6975 |
+| [FilterNet](https://github.com/Mikata-Project/FilterNet) | 0.5978 |
+| Autoregressive* WaveNet | 0.3359 |
+| Autoregressive* FilterNet | 0.602 |
+| Autoregressive* LSTM | 0.6925 |
+
+*Autoregressive here refers to including the previous 365 days of discharge data as an additional feature.  
+**Hyperparameters: 10 layers, 100 hidden units, dropout probability of 0.2, 200 epochs of training.  
+
+Temperature and precipitation were the baseline features used in all models. The training set consisted of the data from 1986-2010, and validation set was 2010-2016.
+
+### 1.3 Limitations
+Main limitation: data availability
+
+### 1.4 Directons for future analysis
+Future directions: Hourly timeseries data needed for all predictive variables. 
+Analysis on when water from which area arrives.
+
+## 2. Runoff prediction model
 
 This code trains an LSTM deep learning model to predict runoff using a dataset of 671 river basins around the UK.
 
@@ -15,7 +64,7 @@ Code features:
 - Automatic saving of the best k checkpoints according to the validation metric.
 - Fully type-hinted and well documented codebase.
 
-### Setup and model training
+### 2.1 Setup and model training
 
 Before running the model, run `conda env create -f environment.yml` to install all required packages (after installing conda). CUDA 10.1 is required to train on GPU with PyTorch 1.7.
 
@@ -60,7 +109,7 @@ An example of a more complex command:
   - `model.dropout_rate` - Dropout probability, where the dropout is applied to the dense layer after the LSTM. Defaults to 0.0
 
 
-### Dataset and features
+### 2.2 Dataset and features
 
 The dataset is [CAMELS-GB](https://catalogue.ceh.ac.uk/documents/8344e4f3-d2ea-44f5-8afa-86d2987543a9) - the first time it is run the code will automatically download and unzip the dataset to `src/data/CAMELS-GB/` using a Dropbox link.
 
