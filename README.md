@@ -22,6 +22,19 @@ LSTM model, lumped
 
 For an introduction to using neural networks in hydrology, we refer the interested reader to [this excellent introduction](https://neuralhydrology.github.io/post/research/gauch2020guide/). 
 
+#### Data sources
+| Data <br>Source 	| Type <br>of Data 	| Temporal <br>resolution 	| Spatial <br>resolution 	| Description 	|
+|-	|-	|-	|-	|-	|
+| [CAMELS-GB](https://catalogue.ceh.ac.uk/documents/8344e4f3-d2ea-44f5-8afa-86d2987543a9) 	| Hydrological data (temperature, <br>precipitation, radiation, humidity, discharge, static attributes, ...) for 671 catchments in the UK 	| daily [1970-2015] 	| lumped 	| Hyrdrologic attributs and historical forcing data for 671 catchments in the UK. All data in CAMELS-GB is lumped, meaning that the data is a averaged over the catchment area. Unfortunately, the dataset does not include Shipston. We used this data for fine tuning the model as well as for analysing the effect of neglecting evapotranspiration. 	|
+| [NRFA Data](https://nrfa.ceh.ac.uk/content/nrfa-api) 	| Discharge data and static <br>catchment attributes for all UK catchments 	| daily <br>[2005-2019] 	| lumped 	| We used this data to compare to CAMELS-GB and Wiski data and to obtain static catchment attributes for Shipston. 	|
+| Wiski Data* 	| Precipitation, discharge and stage data for Shipston catchment 	| hourly <br>[1972-2020] 	| lumped 	| We use the hourly precipitation and discharge data for the final model for the Shipston catchment. 	|
+| Asset Data* 	| NFM interventions(cost, location, size, type, build date, ...) 	| daily <br>[2017-2020] 	| distributed 	| Data on the NFM assets installed. NFM installationstarted in 2017, hence the data covers the date range from 2017 to 2020. 	|
+| [FEH Data](https://fehweb.ceh.ac.uk/) 	| Rainfall return periods 	| - 	| lumped 	| Not used further in our analysis. 	|
+| [CHESS-Met Data](https://www.ceh.ac.uk/news-and-media/news/chess-meteorological-data-now-available) 	| Precipitation, temperature for Shipston catchment 	| daily <br>[1970-2020] 	| distributed 	| We used this precipitation and temperature data for the final model on the Shipston catchment. 	|
+| [Earth Engine Data](https://earthengine.google.com/) 	| Elevation 	| static 	| distributed 	| We used the elevation data from Google Earth engine to calculate the mean elevation in the catchment. 	|
+
+*Starred data sources are private and could be obtained by direct requests to the respective agencies.
+
 ### 1.2 Results
 Rainfall-Runoff model 
 Insight that current data does not seem enough to assess effectiveness of NFM intervetions in this way.
