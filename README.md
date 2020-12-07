@@ -13,7 +13,9 @@ data with daily temporal resolution is likely not enough to confidently assess t
 - __Limited meteorological data availability__: While temperature, precipitation and river discharge data for 1990 to 2020 were readily available, we could not obtain other important meteorological data (notably humidity, windspeed, potential evapotranspiration or solar irradiation) data for this period for the Shipston catchment. This data is relevant to include information about the physical process of evapotranspiration into the model and its absence means that
 our model predictions do not capture all relevant physical mechanisms. We assessed the effect of using only [precipitation and temperature instead of all meteorological data](https://github.com/ai4er-cdt/flood_risk_shipston/issues/17#issuecomment-721790841) via the publicly available [CAMELS-GB](https://catalogue.ceh.ac.uk/documents/8344e4f3-d2ea-44f5-8afa-86d2987543a9) dataset and found that we only loose about 2-4% in [NSE](https://en.wikipedia.org/wiki/Nash%E2%80%93Sutcliffe_model_efficiency_coefficient) performance. While this means that evapotranspiration plays a less important role at high latitudes in Britain (Shipston: ~52° N), it is still a significant loss to drainage basins and should be taken into account from a hydrological point of view. 
 
-Nonetheless, ... our model can be used once they have the required data ... 
+Despite the limits on available data, our runoff prediction model was built in a general way such that it can directly use additional features (e.g. humidity, windspeed, etc.)
+contained in the [CAMELS-GB](https://catalogue.ceh.ac.uk/documents/8344e4f3-d2ea-44f5-8afa-86d2987543a9) dataset when they become available for Shipston, and it can easily be extended to hourly instead of daily data. A detailed description of how to
+run the model on [CAMELS-GB](https://catalogue.ceh.ac.uk/documents/8344e4f3-d2ea-44f5-8afa-86d2987543a9) is given in section 2 of the readme. 
 
 ### 1.1 Approach
 Build an LSTM to model "what-if" scenario.
