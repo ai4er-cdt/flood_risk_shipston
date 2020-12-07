@@ -62,13 +62,39 @@ def get_peaks_above_threshold(df, key, threshold):
     ]
 
 
+def output_excel_files(data_loc, stage60_filtered):
+    for threshold in [2.7, 3.0, 3.4]:
+        df = get_peaks_above_threshold(stage60_filtered, "Stage [m]", threshold)
+        df.to_excel(data_loc + "stage_60min_" + str(threshold) + "m_threshold.xlsx")
+
+
+def output_month_plots(PROJECT_PATH, stage60_filtered):
+    for threshold in np.linspace(2.7, 3.5, 30):
+        plt.figure()
+        df = get_peaks_above_threshold(stage60_filtered, "Stage [m]", threshold)
+        tmp_fig_path = os.path.join(PROJECT_PATH, "data", "tmp_images")
+        if not os.path.exists(tmp_fig_path):
+            os.mkdir(tmp_fig_path)
+        df.groupby(df["Date_Time"].dt.month).count().plot(kind="bar")
+        plt.xlabel("Month")
+        plt.ylabel("Count")
+        plt.savefig(
+            os.path.join(
+                tmp_fig_path, "stage_60min_" + str(threshold) + "m_threshold.png"
+            ),
+            dpi=500,
+            bbox_inches="tight",
+        )
+        plt.clf()
+
+
 if __name__ == "__main__":
 
     this_path = os.path.realpath(__file__)
     PROJECT_PATH = os.path.dirname(os.path.dirname(this_path))
     data_loc = os.path.join(PROJECT_PATH, "data") + "/"
+    stage60_filtered = get_wiski_data(data_loc)
 
-    for threshold in [2.7, 3.0, 3.4]:
-        stage60_filtered = get_wiski_data(data_loc)
-        df = get_peaks_above_threshold(stage60_filtered, "Stage [m]", threshold)
-        df.to_excel(data_loc + "stage_60min_" + str(threshold) + "m_threshold.xlsx")
+    # output_excel_files(data_loc, stage60_filtered)
+
+    output_month_plots(PROJECT_PATH, stage60_filtered)
