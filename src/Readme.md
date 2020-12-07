@@ -23,6 +23,9 @@ downloaded [here](https://catalogue.ceh.ac.uk/documents/8344e4f3-d2ea-44f5-8afa-
 which are not covered in CAMELS-GB.  
 This data is private and has to be requested from the NRFA. 
 
+Other data used in this project:
+- Asset data on the flood management interventions in Shipston, the catchment of interest.
+
 ## 3. Models
 Contains all models used in this project as well as the metrics.   
   
