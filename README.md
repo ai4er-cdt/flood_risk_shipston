@@ -7,20 +7,19 @@ The purpose of this project is to investigate whether we can establish the effec
 Our analysis concludes that the available data (c.f. below for data sources) is not enough to confidently assess the effectiveness of 
 recent NFM interventions in Shipston with [state-of-the-art rainfall-runoff LSTM models](https://hess.copernicus.org/articles/22/6005/2018/). We attribute this to three main factors:
 
+- __Limited data on extreme events__: The period of 1990 to 2020 contains less than 10 floods in Shipston (ca. 7 independent events if we define a flood by a threshold of 3.4m river stage). This means that while there is ample data on the __average__ discharge in the catchment, there is only little information about the __extreme values__ of the river discharge. We see this reflected in the results of our model, as the model's predictions agree well with the ground truth on average dischage values in terms of [Nash-Sutcliff model efficiency (NSE)](https://en.wikipedia.org/wiki/Nash%E2%80%93Sutcliffe_model_efficiency_coefficient), but carry errors of about 20-30% for extreme events. 
 - __Limited temporal resolution of available data__: All publicly available, past meteorological data from the [MetOffice](https://www.metoffice.gov.uk/) and [NRFA](https://nrfa.ceh.ac.uk/) is available on a daily basis. Yet, historical data shows that floods in Shipston depend on processes on hourly timescales. Flooding in Shipston strongly depends on whether the peak flow through Shipston exceeds 3.4m (the height of the Shipston bridge arches) at any given time, which typically happens only for a few hours of a day, even during floods. NFM interventions help to __flatten the curve__ and distribute the peak flow across a wider time range by slowing upstream flow rates. Since leakage through NFMs likely occurs on timescales of hours as well (many NFMs are leaky dams), 
 data with daily temporal resolution is likely not enough to confidently assess the effect of NFM interventions. In other words: NFM interventions might flatten the hourly flow without stronlgy affecting the daily total flow rate, such that the averaging over all hours in a day removes any information about the NFMs effectiveness.
-- __Limited data on extreme events__: The period of 1990 to 2020 contains less than 10 floods in Shipston (ca. 7 independent events if we define a flood by a threshold of 3.4m river stage). This means that while there is ample data on the __average__ discharge in the catchment, there is only little information about the __extreme values__ of the river discharge. We see this reflected in the results of our model, as the model's predictions agree well with the ground truth on average dischage values, but carry errors of about 20-30% for extreme events. 
-- __Limited meteorological data availability__: While temperature, rainfall and river discharge data for 1990 to 2020 were readily available, we could not obtain other important meteorological data (notably humidity, windspeed, potential evapotranspiration or solar irradiation) data for this period for the Shipston catchment. This data is relevant to include information about the physical process of evapotranspiration into the model and its absence means that
-our model predictions do not capture all relevant physical mechanisms. To assess the 
+- __Limited meteorological data availability__: While temperature, precipitation and river discharge data for 1990 to 2020 were readily available, we could not obtain other important meteorological data (notably humidity, windspeed, potential evapotranspiration or solar irradiation) data for this period for the Shipston catchment. This data is relevant to include information about the physical process of evapotranspiration into the model and its absence means that
+our model predictions do not capture all relevant physical mechanisms. We assessed the effect of using only [precipitation and temperature instead of all meteorological data](https://github.com/ai4er-cdt/flood_risk_shipston/issues/17#issuecomment-721790841) via the publicly available [CAMELS-GB](https://catalogue.ceh.ac.uk/documents/8344e4f3-d2ea-44f5-8afa-86d2987543a9) dataset and found that we only loose about 2-4% in [NSE](https://en.wikipedia.org/wiki/Nash%E2%80%93Sutcliffe_model_efficiency_coefficient) performance. While this means that evapotranspiration plays a less important role at high latitudes in Britain (Shipston: ~52° N), it is still a significant loss to drainage basins and should be taken into account from a hydrological point of view. 
 
-While evapotranspiration plays a less important role at high latitudes 
-(Shipston: ~52° N), it is still a significant loss to drainage basins and should be taken into account from a hydrological point of view. 
-
-
-Nonetheless, we ... our model can be used once they have the required data ... 
+Nonetheless, ... our model can be used once they have the required data ... 
 
 ### 1.1 Approach
-Build an LSTM to model "what-if" scenario
+Build an LSTM to model "what-if" scenario.
+LSTM model, lumped
+
+For an introduction to using neural networks in hydrology, we refer the interested reader to [this excellent introduction](https://neuralhydrology.github.io/post/research/gauch2020guide/). 
 
 ### 1.2 Results
 Rainfall-Runoff model 
