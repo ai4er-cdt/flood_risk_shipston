@@ -101,3 +101,7 @@ logs
 logs/
 wandb
 wandb/
+
+
+# Ignore virtual environment folder
+venv/
