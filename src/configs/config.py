@@ -34,7 +34,6 @@ class DatasetConfig:
     num_features: int = MISSING
     seq_length: int = MISSING
     train_test_split: str = MISSING
-    shuffle: bool = MISSING
     num_workers: int = MISSING
 
 

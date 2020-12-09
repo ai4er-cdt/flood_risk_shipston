@@ -191,7 +191,6 @@ class RunoffModel(pl.LightningModule):
         # Use `pin_memory=True` here for asynchronous data transfer to the GPU, speeding up data loading.
         dataloader = DataLoader(dataset=self.train_set,
                                 batch_size=self.config.batch_size,
-                                shuffle=self.config.dataset.shuffle,
                                 num_workers=self.config.dataset.num_workers,
                                 pin_memory=True)
         return dataloader
