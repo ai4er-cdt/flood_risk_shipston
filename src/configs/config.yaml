@@ -14,7 +14,7 @@ date_range: [] # Custom date range for the train dataset, as a list of two strin
 mc_dropout: False # Whether or not to use MC Dropout to get output uncertainty.
 mc_dropout_iters: 20 # Number of forward passes to use with MC dropout to get uncertainty.
 cuda: True # Whether to use GPUs.
-parallel_engine: 'ddp' # PyTorch parallelisation algorithm to use. ddp=DistributedDataParallel
+parallel_engine: ddp # PyTorch parallelisation algorithm to use. ddp=DistributedDataParallel
 gpus: 1 # Number of GPUs to use.
 precision: 32 # Whether to use 32 bit or 16 bit floating points for training on the CAMELS-GB dataset.
 seed: 42 # Random seed.

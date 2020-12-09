@@ -37,7 +37,7 @@ class ShipstonDataset(BaseDataset):
         """
         self.features: List[str] = features['timeseries']
         self.dates: List = [pd.Timestamp(date) for date in dates]
-        self.test_end_date: str = test_end_date
+        self.test_end_date: pd.Timestamp = pd.Timestamp(test_end_date)
         self.train: bool = train
         self.seq_length: int = seq_length
         self.train_test_split: pd.Timestamp = pd.Timestamp(train_test_split)

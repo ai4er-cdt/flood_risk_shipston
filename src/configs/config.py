@@ -60,7 +60,6 @@ class ConfigClass:
     val_interval: float = MISSING
     log_steps: int = MISSING
     date_range: List[str] = MISSING
-    fine_tune: bool = MISSING
     mc_dropout: bool = MISSING
     mc_dropout_iters: int = MISSING
     cuda: bool = MISSING
