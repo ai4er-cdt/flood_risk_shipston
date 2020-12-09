@@ -1,2 +1,3 @@
 # @package _group_
 type: conv
+wavenet_kernel_size: 3

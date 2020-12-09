@@ -23,8 +23,9 @@ class RunoffModel(pl.LightningModule):
         self.save_hyperparameters(config)
         self.config = config
         if self.config.model.type == "conv":
-            self.model: torch.nn.Module = WaveNet(num_features=self.config.dataset.num_features)
-        elif self.config.model.type == "LSTM":
+            self.model: torch.nn.Module = WaveNet(num_features=self.config.dataset.num_features,
+                                                  kernel_size=config.model.kernel_size)
+        elif self.config.model.type == "lstm":
             self.model = LSTMModel(hidden_units=self.config.model.hidden_units,
                                    num_features=self.config.dataset.num_features,
                                    dropout_rate=self.config.model.dropout_rate,
@@ -88,12 +89,14 @@ class RunoffModel(pl.LightningModule):
             self.log(f"Test {self.config.test_metric}", self.test_metric)
 
     def plot_results(self) -> None:
+        # Save predictions (including all MC Dropout iterations) in logs directory.
+        np.savetxt("predictions.csv", self.preds.numpy(), delimiter=",")
+
         fig, ax = plt.subplots(figsize=(16, 8))
         x_axis: List[int] = list(range(len(self.ys)))
         # Play around with alpha here to see uncertainty better!
         ax.plot(x_axis, self.ys, label="observation", alpha=0.8)
         ax.plot(x_axis, self.preds, label="prediction")
-        np.savetxt("preds.csv", self.preds.numpy(), delimiter=",")
         if self.config.mc_dropout:
             preds_var, preds_mean = torch.var_mean(self.preds, dim=1)
             ax.fill_between(x_axis, preds_mean - torch.sqrt(preds_var), preds_mean +

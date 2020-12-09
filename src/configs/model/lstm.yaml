@@ -1,5 +1,5 @@
 # @package _group_
-type: LSTM
+type: lstm
 num_layers: 10 # Number of LSTM layers in the model.
-hidden_units: 50 # Number of hidden units/LSTM cells per layer.
+hidden_units: 100 # Number of hidden units/LSTM cells per layer.
 dropout_rate: 0.2 # Dropout probability, applied to the dense layer after the LSTM.

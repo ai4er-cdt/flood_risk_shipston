@@ -73,7 +73,6 @@ def train_model(config):
         for _ in range(config.mc_dropout_iters):
             trainer.test(runoff_model)
         runoff_model.plot_results()
-        config.mc_dropout = False
-
-    trainer.test(runoff_model)
-    runoff_model.plot_results()
+    else:
+        trainer.test(runoff_model)
+        runoff_model.plot_results()
