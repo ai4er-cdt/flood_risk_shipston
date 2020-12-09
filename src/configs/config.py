@@ -106,7 +106,7 @@ def validate_config(cfg: DictConfig) -> DictConfig:
         raise ValueError(f"The basins fraction {cfg.dataset.basins_frac} must be in the range [0, 1].")
     if cfg.precision != 16 and cfg.precision != 32:
         raise ValueError(f"The precision {cfg.precision} must be either 16 or 32.")
-    if cfg.dataset.type == 'shipston' and cfg.precision !=32:
+    if cfg.dataset.type == 'shipston' and cfg.precision != 32:
         raise ValueError(f"The precision {cfg.precision} must be 32 only for the Shipston dataset.")
     # Make sure num_workers isn't too high.
     core_count = multiprocessing.cpu_count()

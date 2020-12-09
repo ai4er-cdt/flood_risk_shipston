@@ -3,8 +3,7 @@ defaults:
   - model: lstm
   - dataset: shipston
 
-train: True # Boolean that describes whether we are training or testing using a trained model.
-epochs: 20
+epochs: 200
 batch_size: 256
 learning_rate: 3e-3
 test_metric: NSE
