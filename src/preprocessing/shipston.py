@@ -77,7 +77,7 @@ class ShipstonDataset(BaseDataset):
 
         # Normalise data, reshape for LSTM training and remove invalid samples.
         x = self._normalization(x, input=True)
-        x, y = _reshape_data(x, y, self.seq_length, np.float32)
+        x, y = _reshape_data(x, y, self.seq_length)
         if self.train:
             # Normalise discharge - only needs to be done when training.
             y = self._normalization(y, input=False)
