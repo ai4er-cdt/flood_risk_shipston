@@ -1,5 +1,4 @@
 defaults:
-  - mode: train
   - model: lstm
   - dataset: shipston
 
