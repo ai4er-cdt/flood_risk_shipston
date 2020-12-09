@@ -2,56 +2,7 @@ import torch
 import torch.nn as nn
 
 
-def conv_layer(window, in_channels=1, ks=3, dilation=1):
-    return nn.Sequential(
-        nn.Conv1d(in_channels, 1, kernel_size=ks, bias=False, dilation=dilation),
-        nn.AdaptiveAvgPool1d(window),
-        nn.LeakyReLU(negative_slope=0.1, inplace=True))
-
-
-class FilterNet(nn.Module):
-    def __init__(self, num_features):
-        super().__init__()
-        window = 24
-        self.c1a = conv_layer(window=window // 2, in_channels=num_features, ks=1, dilation=1)
-        self.c2a = conv_layer(window=window // 2, in_channels=num_features, ks=2, dilation=1)
-        self.c3a = conv_layer(window=window // 2, in_channels=num_features, ks=3, dilation=1)
-        self.c4a = conv_layer(window=window // 2, in_channels=num_features, ks=4, dilation=1)
-        self.c5a = conv_layer(window=window // 2, in_channels=num_features, ks=5, dilation=1)
-        self.c6a = conv_layer(window=window // 2, in_channels=num_features, ks=6, dilation=1)
-        self.c1b = conv_layer(window=window // 4, ks=1, dilation=2)
-        self.c2b = conv_layer(window=window // 4, ks=2, dilation=2)
-        self.c3b = conv_layer(window=window // 4, ks=3, dilation=2)
-        self.c4b = conv_layer(window=window // 4, ks=4, dilation=2)
-        self.c5b = conv_layer(window=window // 4, ks=5, dilation=2)
-        self.c6b = conv_layer(window=window // 4, ks=6, dilation=2)
-
-        self.fc = nn.Linear(108, 1, bias=False)
-
-    def forward(self, x):
-        x = x.permute(0, 2, 1)
-        self.f1a = self.c1a(x)
-        self.f2a = self.c2a(x)
-        self.f3a = self.c3a(x)
-        self.f4a = self.c4a(x)
-        self.f5a = self.c5a(x)
-        self.f6a = self.c6a(x)
-        self.f1b = self.c1b(self.f1a)
-        self.f2b = self.c2b(self.f2a)
-        self.f3b = self.c3b(self.f3a)
-        self.f4b = self.c4b(self.f4a)
-        self.f5b = self.c5b(self.f5a)
-        self.f6b = self.c6b(self.f6a)
-        x = torch.cat([self.f1a, self.f1b, self.f2a, self.f2b,
-                              self.f3a, self.f3b, self.f4a, self.f4b,
-                              self.f5a, self.f5b, self.f6a, self.f6b, ], 2)
-
-        x = self.fc(x.contiguous().view(x.size(0), -1))
-        return x
-
-
 class Wave_Block(nn.Module):
-
     def __init__(self, in_channels, out_channels, dilation_rates, kernel_size):
         super(Wave_Block, self).__init__()
         self.num_rates = dilation_rates
@@ -81,6 +32,10 @@ class Wave_Block(nn.Module):
 
 
 class WaveNet(nn.Module):
+    """See WaveNet paper here: https://arxiv.org/abs/1609.03499.
+
+    Code adapted from https://www.kaggle.com/cswwp347724/wavenet-pytorch.
+    """
     def __init__(self, num_features=2, kernel_size=3):
         super().__init__()
         self.wave_block1 = Wave_Block(num_features, 16, 12, kernel_size)
@@ -92,6 +47,17 @@ class WaveNet(nn.Module):
         self.pool = nn.MaxPool1d(4)
 
     def forward(self, x):
+        """
+        Forward pass through the network.
+
+        Args:
+            x (torch.Tensor): Tensor of shape `(batch_size, seq_length,
+            num_features)` containing the input data for the network.
+
+        Returns:
+            torch.Tensor: Tensor containing the network predictions
+        """
+        # Permute necessary to switch to (batch_size, num_features, seq_length).
         x = x.permute(0, 2, 1)
 
         x = self.wave_block1(x)
@@ -105,8 +71,56 @@ class WaveNet(nn.Module):
         return x
 
 
-class Conv1DModel(nn.Module):
+def conv_layer(window, in_channels=1, kernel_size=3, dilation=1):
+    return nn.Sequential(
+        nn.Conv1d(in_channels, 1, kernel_size=kernel_size, bias=False, dilation=dilation),
+        nn.AdaptiveAvgPool1d(window),
+        nn.LeakyReLU(negative_slope=0.1, inplace=True))
 
+
+class FilterNet(nn.Module):
+    """Thanks to https://github.com/Mikata-Project/FilterNet for the code."""
+    def __init__(self, num_features, window=24):
+        super().__init__()
+        self.conv1a = conv_layer(window=window // 2, in_channels=num_features, kernel_size=1, dilation=1)
+        self.conv2a = conv_layer(window=window // 2, in_channels=num_features, kernel_size=2, dilation=1)
+        self.conv3a = conv_layer(window=window // 2, in_channels=num_features, kernel_size=3, dilation=1)
+        self.conv4a = conv_layer(window=window // 2, in_channels=num_features, kernel_size=4, dilation=1)
+        self.conv5a = conv_layer(window=window // 2, in_channels=num_features, kernel_size=5, dilation=1)
+        self.conv6a = conv_layer(window=window // 2, in_channels=num_features, kernel_size=6, dilation=1)
+        self.conv1b = conv_layer(window=window // 4, kernel_size=1, dilation=2)
+        self.conv2b = conv_layer(window=window // 4, kernel_size=2, dilation=2)
+        self.conv3b = conv_layer(window=window // 4, kernel_size=3, dilation=2)
+        self.conv4b = conv_layer(window=window // 4, kernel_size=4, dilation=2)
+        self.conv5b = conv_layer(window=window // 4, kernel_size=5, dilation=2)
+        self.conv6b = conv_layer(window=window // 4, kernel_size=6, dilation=2)
+
+        self.fc = nn.Linear(108, 1, bias=False)
+
+    def forward(self, x):
+        x = x.permute(0, 2, 1)
+        self.f1a = self.conv1a(x)
+        self.f2a = self.conv2a(x)
+        self.f3a = self.conv3a(x)
+        self.f4a = self.conv4a(x)
+        self.f5a = self.conv5a(x)
+        self.f6a = self.conv6a(x)
+        self.f1b = self.conv1b(self.f1a)
+        self.f2b = self.conv2b(self.f2a)
+        self.f3b = self.conv3b(self.f3a)
+        self.f4b = self.conv4b(self.f4a)
+        self.f5b = self.conv5b(self.f5a)
+        self.f6b = self.conv6b(self.f6a)
+        x = torch.cat([self.f1a, self.f1b, self.f2a, self.f2b,
+                       self.f3a, self.f3b, self.f4a, self.f4b,
+                       self.f5a, self.f5b, self.f6a, self.f6b], 2)
+
+        x = self.fc(x.contiguous().view(x.size(0), -1))
+        return x
+
+
+class Conv1DModel(nn.Module):
+    """Basic 1D convolutional time series prediction model."""
     def __init__(self, num_features: int, dropout_rate: float = 0.0) -> None:
         super(Conv1DModel, self).__init__()
         self.dropout_rate = dropout_rate
@@ -116,21 +130,10 @@ class Conv1DModel(nn.Module):
         self.conv2 = nn.Conv1d(in_channels=16, out_channels=64, kernel_size=3)
         self.pool = nn.MaxPool1d(2)
 
-        self.dropout = nn.Dropout(p=self.dropout_rate)
         self.fc1 = nn.Linear(in_features=11584, out_features=128)
         self.fc2 = nn.Linear(in_features=128, out_features=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass through the network.
-
-        Args:
-            x (torch.Tensor): Tensor of shape `(batch_size, seq_length,
-            num_features)` containing the input data for the network.
-
-        Returns:
-            torch.Tensor: Tensor containing the network predictions
-        """
         x = x.permute(0, 2, 1)
         x = self.conv1(x)
         x = self.conv2(x)

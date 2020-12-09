@@ -1,6 +1,6 @@
 import os
 import warnings
-from typing import Any, Dict, List, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -12,8 +12,8 @@ from src.preprocessing import BaseDataset
 
 class ShipstonDataset(BaseDataset):
     """Create a PyTorch `Dataset` containing timeseries data from Shipston."""
-    def __init__(self, features: Dict[str, List[str]], dates: List[str], train: bool = True,
-                 seq_length: int = 365, train_test_split: str = '2010', precision: int = 32) -> None:
+    def __init__(self, features: Dict[str, List[str]], dates: List[str], test_end_date: str, train: bool = True,
+                 seq_length: int = 365, train_test_split: str = '2010') -> None:
         """
         Initialise dataset containing the timeseries data from Shipston.
 
@@ -21,9 +21,10 @@ class ShipstonDataset(BaseDataset):
             features (Dict): Dictionary where the keys are the feature type and
             the values are lists of strings with the features to include in the
             dataset.
-            dates (List):  List of specified string dates for the start and end
+            dates (List): List of specified string dates for the start and end
             of the discharge. This overrides the `train_test_split` and `train`
             parameters.
+            test_end_date (str): Specifies the end date of the test dataset.
             train (bool, optional): If `True`, creates dataset from the training
             set, otherwise creates from the test set. Defaults to `True`.
             seq_length (int, optional): Length of the time window of
@@ -33,16 +34,13 @@ class ShipstonDataset(BaseDataset):
             part of the training set, those after will be the test set. Specific
             days should be passed in the format `YYYY-MM-DD`, years can be
             passed as `YYYY`. Defaults to `'2010-01-01'`.
-            precision (int, optional): Whether to load data as single (32-bit)
-            or half (16-bit) precision floating points. Can only be 16 or 32.
-            Defaults to 32.
         """
         self.features: List[str] = features['timeseries']
+        self.dates: List = [pd.Timestamp(date) for date in dates]
+        self.test_end_date: str = test_end_date
         self.train: bool = train
         self.seq_length: int = seq_length
         self.train_test_split: pd.Timestamp = pd.Timestamp(train_test_split)
-        self.dates: List = [pd.Timestamp(date) for date in dates]
-        self.precision = np.float32 if precision == 32 else np.float16
 
         # Suppress Numba deprecation warning.
         warnings.filterwarnings("ignore", message="\nEncountered the use of a type that is scheduled for ")
@@ -65,7 +63,7 @@ class ShipstonDataset(BaseDataset):
         if len(self.dates) == 0 and self.train:
             self.dates = [data.date[0], self.train_test_split]
         elif len(self.dates) == 0 and not self.train:
-            self.dates = [self.train_test_split, '2019-12-31']
+            self.dates = [self.train_test_split, self.test_end_date]
         data = self._crop_dates(data, start_date=self.dates[0], end_date=self.dates[1])
         # Remove as many contiguous regions of NaNs as possible.
         data = self._remove_nan_regions(data)
@@ -74,12 +72,12 @@ class ShipstonDataset(BaseDataset):
         self.feature_names: List[str] = [col for col in SHIPSTON_FEATURES if col in list(data.columns)]
 
         # Extract input and output features from dataframe loaded above.
-        x: np.ndarray = data[self.feature_names].to_numpy(dtype=self.precision)
-        y: np.ndarray = data['discharge_vol'].to_numpy(dtype=self.precision)
+        x: np.ndarray = data[self.feature_names].to_numpy(dtype=np.float32)
+        y: np.ndarray = data['discharge_vol'].to_numpy(dtype=np.float32)
 
         # Normalise data, reshape for LSTM training and remove invalid samples.
         x = self._normalization(x, input=True)
-        x, y = _reshape_data(x, y, self.seq_length, self.precision)
+        x, y = _reshape_data(x, y, self.seq_length, np.float32)
         if self.train:
             # Normalise discharge - only needs to be done when training.
             y = self._normalization(y, input=False)
@@ -192,7 +190,7 @@ class ShipstonDataset(BaseDataset):
 
 
 @njit
-def _reshape_data(x: np.ndarray, y: np.ndarray, seq_length: int, precision: Any) -> Tuple[np.ndarray, np.ndarray]:
+def _reshape_data(x: np.ndarray, y: np.ndarray, seq_length: int) -> Tuple[np.ndarray, np.ndarray]:
     """
     Reshape matrix data into sample shape for LSTM training.
 
@@ -207,7 +205,6 @@ def _reshape_data(x: np.ndarray, y: np.ndarray, seq_length: int, precision: Any)
         y (np.ndarray): Matrix containing the output feature.
         seq_length (int): Length of the time window of meteorological input
         provided for one time step of prediction.
-        precision (int): Whether to load data as `np.float32` or `np.float16`.
 
     Returns:
         Tuple[np.ndarray, np.ndarray]: Two np.ndarrays, the first of shape
@@ -223,8 +220,8 @@ def _reshape_data(x: np.ndarray, y: np.ndarray, seq_length: int, precision: Any)
         if not np.isnan(y[i]):
             num_samples += 1
     # Assign empty numpy arrays with the correct size.
-    x_new = np.empty((num_samples, seq_length, num_features), dtype=precision)
-    y_new = np.empty((num_samples, 1), dtype=precision)
+    x_new = np.empty((num_samples, seq_length, num_features), dtype=np.float32)
+    y_new = np.empty((num_samples, 1), dtype=np.float32)
 
     num_samples = 0  # Start new counter so we can index the new arrays.
     for i in range(seq_length - 1, len(x)):

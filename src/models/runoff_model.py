@@ -29,12 +29,11 @@ class RunoffModel(pl.LightningModule):
                                    num_features=self.config.dataset.num_features,
                                    dropout_rate=self.config.model.dropout_rate,
                                    num_layers=self.config.model.num_layers)
-        # self.loss = torch.nn.MSELoss()
-        self.loss = torch.nn.L1Loss()
+        self.loss = torch.nn.MSELoss()
         self.printer = logging.getLogger("lightning")
 
     def configure_optimizers(self):
-        opt = torch.optim.Adam(self.parameters(), lr=self.config.mode.learning_rate)
+        opt = torch.optim.Adam(self.parameters(), lr=self.config.learning_rate)
         return opt
 
     def forward(self, x):
@@ -60,13 +59,13 @@ class RunoffModel(pl.LightningModule):
             preds_list.append(y_hat)
         preds = self.test_set.rescale(torch.cat(preds_list), input=False)
         test_metric: float = calc_nse(torch.cat(ys_list).cpu().numpy(), preds.cpu().numpy())
-        self.log(self.config.mode.test_metric, test_metric)
+        self.log(self.config.test_metric, test_metric)
 
     def test_step(self, batch, batch_idx):
         return self.validation_step(batch, batch_idx)
 
     def on_test_epoch_start(self):
-        if self.config.mode.mc_dropout:
+        if self.config.mc_dropout:
             self.model.train()
 
     def test_epoch_end(self, outputs: List) -> None:
@@ -78,15 +77,15 @@ class RunoffModel(pl.LightningModule):
         preds = self.test_set.rescale(torch.cat(preds_list), input=False).cpu()
         self.ys = torch.cat(ys_list).cpu()
 
-        if self.config.mode.mc_dropout:
+        if self.config.mc_dropout:
             if not hasattr(self, 'preds'):
                 self.test_metric: float = calc_nse(self.ys.numpy(), preds.numpy())
-                self.log(f"Test {self.config.mode.test_metric}", self.test_metric)
+                self.log(f"Test {self.config.test_metric}", self.test_metric)
             self.preds: torch.Tensor = torch.cat((self.preds, preds), dim=1) if hasattr(self, 'preds') else preds
         else:
             self.preds = preds
             self.test_metric = calc_nse(self.ys.numpy(), self.preds.numpy())
-            self.log(f"Test {self.config.mode.test_metric}", self.test_metric)
+            self.log(f"Test {self.config.test_metric}", self.test_metric)
 
     def plot_results(self) -> None:
         fig, ax = plt.subplots(figsize=(16, 8))
@@ -94,9 +93,8 @@ class RunoffModel(pl.LightningModule):
         # Play around with alpha here to see uncertainty better!
         ax.plot(x_axis, self.ys, label="observation", alpha=0.8)
         ax.plot(x_axis, self.preds, label="prediction")
-        np.savetxt("obs.csv", self.ys.numpy(), delimiter=",")
         np.savetxt("preds.csv", self.preds.numpy(), delimiter=",")
-        if self.config.mode.mc_dropout:
+        if self.config.mc_dropout:
             preds_var, preds_mean = torch.var_mean(self.preds, dim=1)
             ax.fill_between(x_axis, preds_mean - torch.sqrt(preds_var), preds_mean +
                             torch.sqrt(preds_var), alpha=0.5, color='orange', label='pred uncertainty')
@@ -154,15 +152,15 @@ class RunoffModel(pl.LightningModule):
             self.printer.info("Loading training set.")
             if self.config.dataset.type == 'shipston':
                 self.train_set: BaseDataset = ShipstonDataset(features=self.config.dataset.features,
-                                                              dates=self.config.mode.date_range,
+                                                              dates=self.config.date_range,
+                                                              test_end_date=self.config.dataset.test_end_date,
                                                               train=True,
                                                               seq_length=self.config.dataset.seq_length,
-                                                              train_test_split=self.config.dataset.train_test_split,
-                                                              precision=self.config.precision)
+                                                              train_test_split=self.config.dataset.train_test_split)
             elif self.config.dataset.type == 'CAMELS-GB':
                 self.train_set = CamelsGB(features=self.config.dataset.features,
                                           basins_frac=self.config.dataset.basins_frac,
-                                          dates=self.config.mode.date_range,
+                                          dates=self.config.date_range,
                                           train=True,
                                           seq_length=self.config.dataset.seq_length,
                                           train_test_split=self.config.dataset.train_test_split,
@@ -171,15 +169,15 @@ class RunoffModel(pl.LightningModule):
         self.printer.info("Loading test set.")
         if self.config.dataset.type == 'shipston':
             self.test_set: BaseDataset = ShipstonDataset(features=self.config.dataset.features,
-                                                         dates=self.config.mode.date_range,
+                                                         dates=self.config.date_range,
+                                                         test_end_date=self.config.dataset.test_end_date,
                                                          train=False,
                                                          seq_length=self.config.dataset.seq_length,
-                                                         train_test_split=self.config.dataset.train_test_split,
-                                                         precision=self.config.precision)
-        else:
+                                                         train_test_split=self.config.dataset.train_test_split)
+        elif self.config.dataset.type == 'CAMELS-GB':
             self.test_set = CamelsGB(features=self.config.dataset.features,
                                      basins_frac=self.config.dataset.basins_frac,
-                                     dates=self.config.mode.date_range,
+                                     dates=self.config.date_range,
                                      train=False,
                                      seq_length=self.config.dataset.seq_length,
                                      train_test_split=self.config.dataset.train_test_split,
@@ -189,7 +187,7 @@ class RunoffModel(pl.LightningModule):
     def train_dataloader(self):
         # Use `pin_memory=True` here for asynchronous data transfer to the GPU, speeding up data loading.
         dataloader = DataLoader(dataset=self.train_set,
-                                batch_size=self.config.mode.batch_size,
+                                batch_size=self.config.batch_size,
                                 shuffle=self.config.dataset.shuffle,
                                 num_workers=self.config.dataset.num_workers,
                                 pin_memory=True)

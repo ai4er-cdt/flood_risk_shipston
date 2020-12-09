@@ -11,33 +11,6 @@ from src import constants
 
 
 @dataclass
-class ModeConfig:
-    train: bool = MISSING
-    batch_size: int = MISSING
-    date_range: List[str] = MISSING
-
-
-@dataclass
-class TrainConfig(ModeConfig):
-    epochs: int = MISSING
-    learning_rate: float = MISSING
-    optimiser: str = MISSING
-    loss_fn: str = MISSING
-    test_metric: str = MISSING
-    checkpoint_freq: int = MISSING
-    val_interval: float = MISSING
-    log_steps: int = MISSING
-    fine_tune: bool = MISSING
-    mc_dropout: bool = MISSING
-    mc_dropout_iters: int = MISSING
-
-
-@dataclass
-class TestConfig(ModeConfig):
-    pass
-
-
-@dataclass
 class ModelConfig:
     type: str = MISSING
 
@@ -72,14 +45,24 @@ class CamelsConfig(DatasetConfig):
 
 @dataclass
 class ShipstonConfig(DatasetConfig):
-    pass
+    test_end_date: str = MISSING
 
 
 @dataclass
 class ConfigClass:
-    mode: ModeConfig = MISSING
     model: ModelConfig = MISSING
     dataset: DatasetConfig = DatasetConfig()
+    epochs: int = MISSING
+    batch_size: int = MISSING
+    learning_rate: float = MISSING
+    test_metric: str = MISSING
+    checkpoint_freq: int = MISSING
+    val_interval: float = MISSING
+    log_steps: int = MISSING
+    date_range: List[str] = MISSING
+    fine_tune: bool = MISSING
+    mc_dropout: bool = MISSING
+    mc_dropout_iters: int = MISSING
     cuda: bool = MISSING
     parallel_engine: Optional[str] = MISSING
     precision: int = MISSING
@@ -90,8 +73,6 @@ class ConfigClass:
 
 cs = ConfigStore.instance()
 cs.store(name="config", node=ConfigClass)
-cs.store(group="mode", name="train", node=TrainConfig)
-cs.store(group="mode", name="test", node=TestConfig)
 cs.store(group="model", name="lstm", node=LSTMConfig)
 cs.store(group="model", name="conv", node=ConvConfig)
 cs.store(group="dataset", name="shipston", node=ShipstonConfig)
@@ -114,9 +95,9 @@ def validate_config(cfg: DictConfig) -> DictConfig:
     # Validate train_test_split and date_range
     try:
         pd.Timestamp(cfg.dataset.train_test_split)
-        [pd.Timestamp(date) for date in cfg.mode.date_range]
+        [pd.Timestamp(date) for date in cfg.date_range]
     except ValueError:
-        print("The parameters `dataset.train_test_split` and `mode.date_range` must be valid dates.")
+        print("The parameters `dataset.train_test_split` and `date_range` must be valid dates.")
     # Validate seq_length
     if cfg.dataset.seq_length <= 0:
         raise ValueError("The parameter `dataset.seq_length` must be > 0.")
@@ -125,6 +106,8 @@ def validate_config(cfg: DictConfig) -> DictConfig:
         raise ValueError(f"The basins fraction {cfg.dataset.basins_frac} must be in the range [0, 1].")
     if cfg.precision != 16 and cfg.precision != 32:
         raise ValueError(f"The precision {cfg.precision} must be either 16 or 32.")
+    if cfg.dataset.type == 'shipston' and cfg.precision !=32:
+        raise ValueError(f"The precision {cfg.precision} must be 32 only for the Shipston dataset.")
     # Make sure num_workers isn't too high.
     core_count = multiprocessing.cpu_count()
     if cfg.dataset.num_workers > core_count * 2:

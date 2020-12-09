@@ -14,7 +14,7 @@ CAMELS_URL = "https://www.dropbox.com/s/4x7db07gjakl7sk/8344e4f3-d2ea-44f5-8afa-
 # Filename of CAMELS-GB dataset.
 CAMELS_ID = "8344e4f3-d2ea-44f5-8afa-86d2987543a9"
 # Dropbox URL of Shipston time series dataset.
-SHIPSTON_URL = "https://www.dropbox.com/s/730xrnkl4q1agbv/shipstonv3.csv?raw=1"
+SHIPSTON_URL = "https://www.dropbox.com/s/hv0cnv3q3i8rbpk/shipstonv4.csv?raw=1"
 SHIPSTON_ID = SHIPSTON_URL[SHIPSTON_URL.index('shipston'):SHIPSTON_URL.index('csv') + 3]
 # Load JSON with dataset information.
 with open(os.path.join(SRC_PATH, 'constants.json')) as json_file:

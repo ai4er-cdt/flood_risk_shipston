@@ -47,14 +47,15 @@ def train_model(config):
     wandb_logger = WandbLogger(name=config.run_name, save_dir=run_dir, entity='herbie', project='shipston',
                                save_code=False, anonymous=True)
     ckpt_path: str = os.path.join(run_dir, 'checkpoints', "{epoch}")
-    ckpt = ModelCheckpoint(filepath=ckpt_path, period=config.mode.checkpoint_freq, monitor=config.mode.test_metric,
+    # Saves the top 2 checkpoints according to the test metric (NSE) throughout training.
+    ckpt = ModelCheckpoint(filepath=ckpt_path, period=config.checkpoint_freq, monitor=config.test_metric,
                            save_top_k=2, mode='max')
 
     # Instantiate Trainer
     trainer = Trainer(accelerator=config.parallel_engine, auto_select_gpus=config.cuda, gpus=config.gpus,
                       benchmark=True, deterministic=True, checkpoint_callback=ckpt, precision=config.precision,
-                      prepare_data_per_node=False, max_epochs=config.mode.epochs, logger=wandb_logger,
-                      log_every_n_steps=config.mode.log_steps, val_check_interval=config.mode.val_interval)
+                      prepare_data_per_node=False, max_epochs=config.epochs, logger=wandb_logger,
+                      log_every_n_steps=config.log_steps, val_check_interval=config.val_interval)
 
     # Train model
     trainer.fit(runoff_model)
@@ -68,11 +69,11 @@ def train_model(config):
     torch.save(runoff_model.model.state_dict(), statedict_path)
 
     # Test and get Monte Carlo Dropout uncertainties.
-    if config.mode.mc_dropout:
-        for _ in range(config.mode.mc_dropout_iters):
+    if config.mc_dropout:
+        for _ in range(config.mc_dropout_iters):
             trainer.test(runoff_model)
         runoff_model.plot_results()
-        config.mode.mc_dropout = False
+        config.mc_dropout = False
 
     trainer.test(runoff_model)
     runoff_model.plot_results()

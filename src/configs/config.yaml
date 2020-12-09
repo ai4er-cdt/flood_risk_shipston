@@ -3,10 +3,22 @@ defaults:
   - model: lstm
   - dataset: shipston
 
+train: True # Boolean that describes whether we are training or testing using a trained model.
+epochs: 20
+batch_size: 256
+learning_rate: 3e-3
+test_metric: NSE
+checkpoint_freq: 1 # How many epochs we should train for before checkpointing the model.
+val_interval: 0.25 # If this is a float, it is the proportion of the training set that should go between validation epochs.
+# If this is an int, it denotes the number of batches in between validation epochs.
+log_steps: 20 # How many gradient updates between each log point.
+date_range: [] # Custom date range for the train dataset, as a list of two strings.
+mc_dropout: False # Whether or not to use MC Dropout to get output uncertainty.
+mc_dropout_iters: 20 # Number of forward passes to use with MC dropout to get uncertainty.
 cuda: True # Whether to use GPUs.
 parallel_engine: 'ddp' # PyTorch parallelisation algorithm to use. ddp=DistributedDataParallel
 gpus: 1 # Number of GPUs to use.
-precision: 32 # Whether to use 32 bit or 16 bit floating points for the model.
+precision: 32 # Whether to use 32 bit or 16 bit floating points for training on the CAMELS-GB dataset.
 seed: 42 # Random seed.
 run_name: ??? # Mandatory string argument that describes the run.
 
