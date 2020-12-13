@@ -19,3 +19,5 @@ dependencies:
     - pytorch-lightning
     - wandb
     - numba<0.52
+    - xlrd # these last two let you write excel files with datetimes in them.
+    - openpyxl
