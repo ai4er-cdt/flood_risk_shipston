@@ -10,12 +10,7 @@ from src.configs import config
 @hydra.main(config_path=os.path.join(constants.SRC_PATH, 'configs'), config_name="config")
 def main(cfg) -> None:
     cfg = config.validate_config(cfg)
-
-    if cfg.mode.train:
-        train_model(cfg)
-    else:
-        # Add code here later for testing/finetuning.
-        raise NotImplementedError
+    train_model(cfg)
 
 
 if __name__ == "__main__":

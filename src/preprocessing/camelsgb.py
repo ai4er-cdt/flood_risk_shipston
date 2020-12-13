@@ -8,11 +8,11 @@ import numpy as np
 import pandas as pd
 import torch
 from numba import njit
-from src import constants
-from torch.utils.data import Dataset
+from src.constants import *
+from src.preprocessing import BaseDataset
 
 
-class CamelsGB(Dataset):
+class CamelsGB(BaseDataset):
     """
     Create a PyTorch `Dataset` containing data of basin(s) from CAMELS-GB.
 
@@ -20,9 +20,8 @@ class CamelsGB(Dataset):
     discharge data for 671 hydrological basins/catchments in the UK. This class
     loads data from an arbitrary number of these basins (by default all 671).
     """
-    def __init__(self, data_dir: str, features: Dict[str, List[str]], basins_frac: float, dates: List[str],
-                 train: bool = True, seq_length: int = 365, train_test_split: str = '2010',
-                 precision: int = 32) -> None:
+    def __init__(self, features: Dict[str, List[str]], basins_frac: float, dates: List[str], train: bool = True,
+                 seq_length: int = 365, train_test_split: str = '2010', precision: int = 32) -> None:
         """
         Initialise dataset containing the data of basin(s) from CAMELS-GB.
 
@@ -32,7 +31,6 @@ class CamelsGB(Dataset):
         basins.
 
         Args:
-            data_dir (str): Path to the directory with the data.
             features (Dict): Dictionary where the keys are the feature type and
             the values are lists of strings with the features to include in the
             dataset.
@@ -54,7 +52,7 @@ class CamelsGB(Dataset):
             or half (16-bit) precision floating points. Can only be 16 or 32.
             Defaults to 32.
         """
-        self.data_dir: str = os.path.join(data_dir, 'CAMELS-GB')
+        self.data_dir: str = os.path.join(DATA_PATH, 'CAMELS-GB')
         # Use defaultdict to avoid errors when we ask for a key that isn't in the dict.
         self.features: Dict[str, List[str]] = defaultdict(list, features)
         self.train: bool = train
@@ -65,7 +63,7 @@ class CamelsGB(Dataset):
         # Take the first basins_frac * len(basins_list) of basins from the list if training, if testing just test on one
         # basin for now.
         if self.train:
-            self.basin_ids: List[int] = list(constants.ALL_BASINS[:round(len(constants.ALL_BASINS) * basins_frac)])
+            self.basin_ids: List[int] = ALL_BASINS[:round(len(ALL_BASINS) * basins_frac)]
             # Remove two particular basins from the list if we use either of these features since these are the only two
             # basins with NaN values for these potentially useful features.
             if 'dpsbar' in self.features['topographic'] or 'elem_mean' in self.features['topographic']:
@@ -73,7 +71,7 @@ class CamelsGB(Dataset):
                     if basin_id in self.basin_ids:
                         self.basin_ids.remove(basin_id)
         else:
-            self.basin_ids = [constants.ALL_BASINS[2]]
+            self.basin_ids = [ALL_BASINS[2]]
 
         # Suppress Numba deprecation warning.
         warnings.filterwarnings("ignore", message="\nEncountered the use of a type that is scheduled for ")
@@ -100,7 +98,7 @@ class CamelsGB(Dataset):
             df.rename(columns={"discharge_spec": "QObs(mm/d)"}, inplace=True)
             df.date = pd.to_datetime(df.date, dayfirst=True, format="%Y-%m-%d")
             # Iterate through each category of static basin attributes and add the ones in the config yaml as a column.
-            for key in constants.DATASET_KEYS[1:]:
+            for key in DATASET_KEYS[1:]:
                 # Check if any of the features requested are actually in this category, doing this gives large speedup.
                 if len(self.features[key]) > 0:
                     filename = f'CAMELS_GB_{key}_attributes.csv'
@@ -135,87 +133,73 @@ class CamelsGB(Dataset):
             filepath: str = os.path.join(self.data_dir, 'timeseries',
                                          f'CAMELS_GB_hydromet_timeseries_{basin}_19701001-20150930.csv')
             df_list.append(process_df(pd.read_csv(filepath, usecols=timeseries_columns, parse_dates=[0],
-                                                    infer_datetime_format=True), basin_indexes, basin_idx))
+                                                  infer_datetime_format=True), basin_indexes, basin_idx))
         # Single concat operation is very fast.
         data = pd.concat(df_list, axis=0, ignore_index=True)
         self.logger.info("Loaded basins into dataframe.")
         # List of feature names in `data` with a constant ordering independent of `data` or the features dict.
-        self.feature_names: List[str] = [col for col in constants.ALL_FEATURES if col in list(data.columns)]
+        self.feature_names: List[str] = [col for col in CAMELS_FEATURES if col in list(data.columns)]
 
         # Extract input and output features from dataframe loaded above.
         x: np.ndarray = data[self.feature_names].to_numpy(dtype=self.precision)
         y: np.ndarray = data['QObs(mm/d)'].to_numpy(dtype=self.precision)
 
         # Normalise data, reshape for LSTM training and remove invalid samples.
-        x = self._normalization(x, variable='inputs')
+        x = self._normalization(x, input=True)
         x, y = _reshape_data(x, y, basin_indexes, self.seq_length, self.precision)
         self.logger.info("Loaded basins into sequences in array")
         if self.train:
             # Normalise discharge - only needs to be done when training.
-            y = self._normalization(y, variable='output')
+            y = self._normalization(y, input=False)
 
         # Convert arrays to torch tensors.
         return torch.from_numpy(x), torch.from_numpy(y)
 
-    def _normalization(self, data_array: np.ndarray, variable: str) -> np.ndarray:
+    def _normalization(self, data: np.ndarray, input: bool) -> np.ndarray:
         """
         Normalize input/output features with mean/std from across all basins.
 
         Args:
-            data_array (np.ndarray): Array containing the features as a matrix.
-            variable (str): Either `'inputs'` or `'output'` depending on which
-            feature will be normalized.
-
-        Raises:
-            RuntimeError: If `variable` is not `'inputs'` or `'output'`.
+            data (np.ndarray): Array containing the features as a matrix.
+            input (bool): If True, the `data` array is the model input.
 
         Returns:
-            np.ndarray: Array of the same shape as `data_array` containing the
+            np.ndarray: Array of the same shape as `data` containing the
             normalized features.
         """
-        if variable == 'inputs':
-            means = np.array([constants.FEATURE_STATISTICS[feature][0] for feature in self.feature_names])
-            stds = np.array([constants.FEATURE_STATISTICS[feature][1] for feature in self.feature_names])
-            data_array = (data_array - means) / stds
-        elif variable == 'output':
-            data_array = ((data_array - constants.FEATURE_STATISTICS["QObs(mm/d)"][0]) /
-                          constants.FEATURE_STATISTICS["QObs(mm/d)"][1])
+        if input:
+            means = np.array([FEATURE_STATISTICS[feature][0] for feature in self.feature_names])
+            stds = np.array([FEATURE_STATISTICS[feature][1] for feature in self.feature_names])
+            data = (data - means) / stds
         else:
-            raise TypeError(f"Unknown variable type {type(variable)}")
+            data = ((data - FEATURE_STATISTICS["QObs(mm/d)"][0]) / FEATURE_STATISTICS["QObs(mm/d)"][1])
 
-        return data_array
+        return data
 
-    def rescale(self, data_array: torch.Tensor, variable: str) -> torch.Tensor:
+    def rescale(self, data: torch.Tensor, input: bool) -> torch.Tensor:
         """
         Rescale input/output features back to original size with mean/std.
 
-        The mean/std is again calculated across all 671 basins.
+        The mean/std is calculated across all 671 basins.
 
         Args:
-            data_array (torch.Tensor): Array containing the features as a matrix.
-            variable (str): Either `'inputs'` or `'output'` depending on which
-            feature will be normalized.
-
-        Raises:
-            RuntimeError: If `variable` is not `'inputs'` or `'output'`.
+            data (torch.Tensor): Array containing the features as a matrix.
+            input (bool): If True, the `data` array is the model input.
 
         Returns:
-            torch.Tensor: Array of the same shape as `data_array` containing the
+            torch.Tensor: Array of the same shape as `data` containing the
             normalized features.
         """
-        if variable == 'inputs':
-            means = torch.tensor([constants.FEATURE_STATISTICS[feature][0] for feature in self.feature_names],
+        if input:
+            means = torch.tensor([FEATURE_STATISTICS[feature][0] for feature in self.feature_names],
                                  dtype=torch.float32)
-            stds = torch.tensor([constants.FEATURE_STATISTICS[feature][1] for feature in self.feature_names],
+            stds = torch.tensor([FEATURE_STATISTICS[feature][1] for feature in self.feature_names],
                                 dtype=torch.float32)
-            data_array = data_array * stds + means
-        elif variable == 'output':
-            data_array = (data_array * constants.FEATURE_STATISTICS["QObs(mm/d)"][1] +
-                          constants.FEATURE_STATISTICS["QObs(mm/d)"][0])
+            data = data * stds + means
         else:
-            raise TypeError(f"Unknown variable type {type(variable)}")
+            data = (data * FEATURE_STATISTICS["QObs(mm/d)"][1] + FEATURE_STATISTICS["QObs(mm/d)"][0])
 
-        return data_array
+        return data
 
     def _crop_dates(self, df: pd.DataFrame, start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
         """

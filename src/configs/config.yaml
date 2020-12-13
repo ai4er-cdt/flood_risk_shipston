@@ -1,24 +1,28 @@
 defaults:
-  - mode: train
   - model: lstm
+  - dataset: shipston
 
-dataset:
-  features: {'timeseries' : ['precipitation', 'temperature', 'shortwave_rad', 'peti',
-  'humidity', 'windspeed']}
-  seq_length: 365 # Number of previous days of meterological data to use for one prediction.
-  train_test_split: '2010' # Split date to separate the data into the train and test sets.
-  basins_frac: 0.1 # Fraction of basins that will be combined to create the dataset.
-  shuffle: True # Whether to shuffle the training dataset randomly.
-  num_workers: 8 # Number of subprocesses to use for data loading.
-
+epochs: 200
+batch_size: 256
+learning_rate: 3e-3
+test_metric: NSE
+checkpoint_freq: 1 # How many epochs we should train for before checkpointing the model.
+val_interval: 0.25 # If this is a float, it is the proportion of the training set that should go between validation epochs.
+# If this is an int, it denotes the number of batches in between validation epochs.
+log_steps: 20 # How many gradient updates between each log point.
+date_range: [] # Custom date range for the train dataset, as a list of two strings.
+mc_dropout: False # Whether or not to use MC Dropout to get output uncertainty.
+mc_dropout_iters: 20 # Number of forward passes to use with MC dropout to get uncertainty.
 cuda: True # Whether to use GPUs.
-parallel_engine: 'ddp' # PyTorch parallelisation algorithm to use. ddp=DistributedDataParallel
+parallel_engine: ddp # PyTorch parallelisation algorithm to use. ddp=DistributedDataParallel
 gpus: 1 # Number of GPUs to use.
-precision: 32 # Whether to use 32 bit or 16 bit floating points for the model.
+precision: 32 # Whether to use 32 bit or 16 bit floating points for training on the CAMELS-GB dataset.
 seed: 42 # Random seed.
 run_name: ??? # Mandatory string argument that describes the run.
 
 # Hydra config overrides:
 hydra:
   run:
+    dir: logs/${run_name}
+  sweep:
     dir: logs/${run_name}
